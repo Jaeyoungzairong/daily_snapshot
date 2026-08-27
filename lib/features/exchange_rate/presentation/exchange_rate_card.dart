@@ -40,17 +40,25 @@ class _ExchangeRateCardState extends ConsumerState<ExchangeRateCard> {
       title: '환율',
       icon: Icons.currency_exchange,
       accentColor: accentColor,
-      trailing: DropdownButton<String>(
-        value: selectedCode,
-        underline: const SizedBox.shrink(),
-        items: [
+      trailing: DropdownMenu<String>(
+        initialSelection: selectedCode,
+        // 필드 자체는 짧은 코드("USD") 기준으로 자동으로 좁게 잡히게 두고, 펼쳤을 때 나오는
+        // 메뉴만 menuStyle로 따로 넓혀서 "USD · 미국 달러" 같은 전체 이름이 줄바꿈 없이 보이게 한다.
+        textStyle: theme.textTheme.bodyMedium,
+        menuStyle: const MenuStyle(
+          minimumSize: WidgetStatePropertyAll(Size(190, 0)),
+        ),
+        trailingIcon: const Icon(Icons.expand_more, size: 20),
+        selectedTrailingIcon: const Icon(Icons.expand_less, size: 20),
+        dropdownMenuEntries: [
           for (final currency in CurrencyCatalog.targetCurrencies)
-            DropdownMenuItem(
+            DropdownMenuEntry(
               value: currency.code,
-              child: Text('${currency.code} · ${currency.displayName}'),
+              label: currency.code,
+              labelWidget: Text('${currency.code} · ${currency.displayName}'),
             ),
         ],
-        onChanged: (value) {
+        onSelected: (value) {
           if (value == null) return;
           ref.read(selectedCurrencyProvider.notifier).select(value);
         },
