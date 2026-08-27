@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "daily_snapshot_web_static",
+      "runtimeExecutable": "C:\\Users\\PC\\AppData\\Local\\Pub\\Cache\\bin\\dhttpd.bat",
+      "runtimeArgs": ["--path", "build/web", "--port", "8766"],
+      "port": 8766
+    }
+  ]
+}
