@@ -10,6 +10,7 @@ class WeatherModel {
     required this.minTemp,
     required this.dailyForecast,
     required this.hourlyForecast,
+    required this.precipitationAmount,
   });
 
   /// Open-Meteo forecast API 응답 파싱. 현재는 사용하지 않는 OpenMeteoWeatherRepository
@@ -26,6 +27,7 @@ class WeatherModel {
     final maxTemps = (daily['temperature_2m_max'] as List).cast<num>();
     final minTemps = (daily['temperature_2m_min'] as List).cast<num>();
     final weatherCodes = (daily['weather_code'] as List).cast<num>();
+    final dailyPops = (daily['precipitation_probability_max'] as List).cast<num>();
 
     final dailyForecast = List.generate(dates.length, (i) {
       return DailyForecast(
@@ -33,6 +35,7 @@ class WeatherModel {
         maxTemp: maxTemps[i].toDouble(),
         minTemp: minTemps[i].toDouble(),
         condition: WeatherCondition.fromWmoCode(weatherCodes[i].toInt()),
+        precipitationProbability: dailyPops[i].toInt(),
       );
     });
 
@@ -40,6 +43,8 @@ class WeatherModel {
     final hourTimes = (hourly['time'] as List).cast<String>();
     final hourTemps = (hourly['temperature_2m'] as List).cast<num>();
     final hourCodes = (hourly['weather_code'] as List).cast<num>();
+    final hourPops = (hourly['precipitation_probability'] as List).cast<num>();
+    final hourPrecips = (hourly['precipitation'] as List).cast<num>();
 
     final hourlyForecast = <HourlyForecast>[];
     for (var i = 0; i < hourTimes.length; i++) {
@@ -54,6 +59,8 @@ class WeatherModel {
           temperature: hourTemps[i].toDouble(),
           condition: WeatherCondition.fromWmoCode(hourCodes[i].toInt()),
           isNow: time.hour == currentTime.hour,
+          precipitationProbability: hourPops[i].toInt(),
+          precipitationAmount: _formatMillimeters(hourPrecips[i]),
         ));
       }
     }
@@ -67,7 +74,13 @@ class WeatherModel {
       minTemp: dailyForecast.first.minTemp,
       dailyForecast: dailyForecast,
       hourlyForecast: hourlyForecast,
+      precipitationAmount: _formatMillimeters(current['precipitation'] as num),
     );
+  }
+
+  /// Open-Meteo의 mm 실수값을 표시용 문자열로 변환한다. 0이면 강수가 없다는 뜻이라 null.
+  static String? _formatMillimeters(num value) {
+    return value > 0 ? '${value.toStringAsFixed(1)}mm' : null;
   }
 
   final String cityName;
@@ -83,6 +96,9 @@ class WeatherModel {
   /// 현재 시각부터 24시간 후까지의 시간별 예보.
   final List<HourlyForecast> hourlyForecast;
 
+  /// 현재 강수량 표시용 문자열(예: "1.0mm", 기상청은 범주 텍스트 그대로). 강수가 없으면 null.
+  final String? precipitationAmount;
+
   String get description => condition.description;
   IconData get icon => condition.icon;
 }
@@ -93,12 +109,16 @@ class DailyForecast {
     required this.maxTemp,
     required this.minTemp,
     required this.condition,
+    required this.precipitationProbability,
   });
 
   final DateTime date;
   final double maxTemp;
   final double minTemp;
   final WeatherCondition condition;
+
+  /// 그날의 최대 강수확률(%). 기상청 경로는 하루 중 슬롯별 POP의 최댓값.
+  final int precipitationProbability;
 
   String get description => condition.description;
   IconData get icon => condition.icon;
@@ -110,6 +130,8 @@ class HourlyForecast {
     required this.temperature,
     required this.condition,
     required this.isNow,
+    required this.precipitationProbability,
+    required this.precipitationAmount,
   });
 
   final DateTime time;
@@ -118,6 +140,12 @@ class HourlyForecast {
 
   /// 시간별 예보 중 현재 시각과 같은 시간대인지 여부.
   final bool isNow;
+
+  /// 해당 시간대 강수확률(%).
+  final int precipitationProbability;
+
+  /// 해당 시간대 강수량 표시용 문자열. 강수가 없으면 null.
+  final String? precipitationAmount;
 
   String get description => condition.description;
   IconData get icon => condition.icon;

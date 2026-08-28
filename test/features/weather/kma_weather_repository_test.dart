@@ -39,6 +39,34 @@ void main() {
       expect(model.hourlyForecast[1].isNow, isFalse);
       expect(model.hourlyForecast[2].time, DateTime(2026, 8, 29, 22));
       expect(model.hourlyForecast[2].condition, WeatherCondition.partlyCloudy);
+      // POP/PCP 항목이 없는 슬롯은 강수확률 0, 강수량 null이어야 함.
+      expect(model.hourlyForecast[0].precipitationProbability, 0);
+      expect(model.hourlyForecast[0].precipitationAmount, isNull);
+    });
+
+    test('parses POP/PCP into precipitation fields, treating "강수없음" as null', () {
+      final model = buildWeatherModel(
+        cityName: '테스트시',
+        now: DateTime(2026, 8, 28, 10, 1),
+        currentByCategory: {'T1H': '20.0', 'WSD': '1.0', 'PTY': '0'},
+        forecastItems: [
+          _item('20260828', '1000', 'TMP', '20'),
+          _item('20260828', '1000', 'SKY', '1'),
+          _item('20260828', '1000', 'PTY', '0'),
+          _item('20260828', '1000', 'POP', '70'),
+          _item('20260828', '1000', 'PCP', '1.0mm'),
+          _item('20260828', '1100', 'TMP', '21'),
+          _item('20260828', '1100', 'SKY', '1'),
+          _item('20260828', '1100', 'PTY', '0'),
+          _item('20260828', '1100', 'POP', '0'),
+          _item('20260828', '1100', 'PCP', '강수없음'),
+        ],
+      );
+
+      expect(model.hourlyForecast[0].precipitationProbability, 70);
+      expect(model.hourlyForecast[0].precipitationAmount, '1.0mm');
+      expect(model.hourlyForecast[1].precipitationProbability, 0);
+      expect(model.hourlyForecast[1].precipitationAmount, isNull);
     });
   });
 
@@ -96,6 +124,30 @@ void main() {
       expect(model.dailyForecast[1].minTemp, 24.0); // TMN 있음 → 그대로
       expect(model.dailyForecast[1].maxTemp, 29.0);
     });
+
+    test('daily precipitation probability is the max POP across the day\'s slots', () {
+      final model = buildWeatherModel(
+        cityName: '테스트시',
+        now: DateTime(2026, 8, 28, 6),
+        currentByCategory: {'T1H': '20.0', 'WSD': '1.0', 'PTY': '0'},
+        forecastItems: [
+          _item('20260828', '0900', 'TMP', '20'),
+          _item('20260828', '0900', 'SKY', '1'),
+          _item('20260828', '0900', 'PTY', '0'),
+          _item('20260828', '0900', 'POP', '30'),
+          _item('20260828', '1200', 'TMP', '25'),
+          _item('20260828', '1200', 'SKY', '1'),
+          _item('20260828', '1200', 'PTY', '0'),
+          _item('20260828', '1200', 'POP', '80'),
+          _item('20260828', '1500', 'TMP', '24'),
+          _item('20260828', '1500', 'SKY', '1'),
+          _item('20260828', '1500', 'PTY', '0'),
+          _item('20260828', '1500', 'POP', '50'),
+        ],
+      );
+
+      expect(model.dailyForecast[0].precipitationProbability, 80);
+    });
   });
 
   group('buildWeatherModel · current condition', () {
@@ -129,6 +181,33 @@ void main() {
       );
 
       expect(model.condition, WeatherCondition.rain);
+    });
+
+    test('current precipitation comes from RN1, a unitless number where "0" means no rain', () {
+      // RN1은 PCP와 달리 "강수없음" 문자열이 아니라 단위 없는 순수 숫자로 온다.
+      final withRain = buildWeatherModel(
+        cityName: '테스트시',
+        now: DateTime(2026, 8, 28, 10, 1),
+        currentByCategory: {'T1H': '18.0', 'WSD': '3.0', 'PTY': '1', 'RN1': '1.0'},
+        forecastItems: [
+          _item('20260828', '1000', 'TMP', '18'),
+          _item('20260828', '1000', 'SKY', '1'),
+          _item('20260828', '1000', 'PTY', '0'),
+        ],
+      );
+      expect(withRain.precipitationAmount, '1.0mm');
+
+      final noRain = buildWeatherModel(
+        cityName: '테스트시',
+        now: DateTime(2026, 8, 28, 10, 1),
+        currentByCategory: {'T1H': '18.0', 'WSD': '3.0', 'PTY': '0', 'RN1': '0'},
+        forecastItems: [
+          _item('20260828', '1000', 'TMP', '18'),
+          _item('20260828', '1000', 'SKY', '1'),
+          _item('20260828', '1000', 'PTY', '0'),
+        ],
+      );
+      expect(noRain.precipitationAmount, isNull);
     });
   });
 }

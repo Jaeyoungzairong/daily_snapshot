@@ -16,11 +16,25 @@ class _FakeWeatherRepository extends WeatherRepository {
       maxTemp: 25,
       minTemp: 15,
       dailyForecast: [
-        DailyForecast(date: DateTime(2026, 8, 27), maxTemp: 25, minTemp: 15, condition: WeatherCondition.clear),
+        DailyForecast(
+          date: DateTime(2026, 8, 27),
+          maxTemp: 25,
+          minTemp: 15,
+          condition: WeatherCondition.clear,
+          precipitationProbability: 10,
+        ),
       ],
       hourlyForecast: [
-        HourlyForecast(time: DateTime(2026, 8, 27, 14), temperature: 20, condition: WeatherCondition.clear, isNow: true),
+        HourlyForecast(
+          time: DateTime(2026, 8, 27, 14),
+          temperature: 20,
+          condition: WeatherCondition.clear,
+          isNow: true,
+          precipitationProbability: 10,
+          precipitationAmount: null,
+        ),
       ],
+      precipitationAmount: null,
     );
   }
 

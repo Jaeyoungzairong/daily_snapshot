@@ -27,9 +27,9 @@ class OpenMeteoWeatherRepository implements WeatherRepository {
     final forecastUri = _forecastBase.replace(queryParameters: {
       'latitude': city.latitude.toString(),
       'longitude': city.longitude.toString(),
-      'current': 'temperature_2m,weather_code,wind_speed_10m',
-      'hourly': 'temperature_2m,weather_code',
-      'daily': 'temperature_2m_max,temperature_2m_min,weather_code',
+      'current': 'temperature_2m,weather_code,wind_speed_10m,precipitation',
+      'hourly': 'temperature_2m,weather_code,precipitation_probability,precipitation',
+      'daily': 'temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max',
       'forecast_days': '7',
       'timezone': 'auto',
     });

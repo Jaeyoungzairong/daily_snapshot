@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/theme_mode_provider.dart';
 import '../../exchange_rate/presentation/exchange_rate_card.dart';
-import '../../stock/presentation/stock_placeholder_card.dart';
 import '../../weather/presentation/weather_card.dart';
 
 class DashboardPage extends ConsumerWidget {
@@ -13,7 +12,6 @@ class DashboardPage extends ConsumerWidget {
   static const List<Widget> _cards = [
     WeatherCard(),
     ExchangeRateCard(),
-    StockPlaceholderCard(),
   ];
 
   @override

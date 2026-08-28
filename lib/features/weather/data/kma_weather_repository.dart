@@ -152,6 +152,8 @@ WeatherModel buildWeatherModel({
         pty: int.tryParse(category['PTY'] ?? '') ?? 0,
       ),
       isNow: time == nowHour,
+      precipitationProbability: int.tryParse(category['POP'] ?? '') ?? 0,
+      precipitationAmount: _noPrecipitation(category['PCP']),
     ));
   }
 
@@ -170,6 +172,7 @@ WeatherModel buildWeatherModel({
     String? repSky;
     String? repPty;
     int? repDistanceToNoon;
+    var maxPop = 0;
 
     for (final key in keysOfDate) {
       final category = slots[key]!;
@@ -177,6 +180,8 @@ WeatherModel buildWeatherModel({
       if (tmp != null) tmps.add(double.parse(tmp));
       if (category['TMX'] != null) tmx = double.parse(category['TMX']!);
       if (category['TMN'] != null) tmn = double.parse(category['TMN']!);
+      final pop = int.tryParse(category['POP'] ?? '') ?? 0;
+      if (pop > maxPop) maxPop = pop;
 
       // 낮 12시에 가장 가까운 슬롯의 하늘상태를 그날의 대표 아이콘으로 쓴다.
       final hour = int.parse(key.substring(8, 10));
@@ -199,6 +204,8 @@ WeatherModel buildWeatherModel({
         sky: int.tryParse(repSky ?? '') ?? 1,
         pty: int.tryParse(repPty ?? '') ?? 0,
       ),
+      // 하루 중 슬롯별 강수확률(POP)의 최댓값을 그날의 대표값으로 쓴다.
+      precipitationProbability: maxPop,
     ));
   }
 
@@ -216,8 +223,25 @@ WeatherModel buildWeatherModel({
     minTemp: dailyForecast.first.minTemp,
     dailyForecast: dailyForecast,
     hourlyForecast: hourlyForecast,
+    // 초단기실황의 실측 강수량(RN1). 단기예보(PCP)와 달리 "지금" 시점의 실제값이다.
+    precipitationAmount: _currentPrecipitationText(currentByCategory['RN1']),
   );
 }
 
 String _keyFor(DateTime dt) =>
     '${dt.year.toString().padLeft(4, '0')}${dt.month.toString().padLeft(2, '0')}${dt.day.toString().padLeft(2, '0')}${dt.hour.toString().padLeft(2, '0')}00';
+
+/// 단기예보 PCP는 강수가 없을 때 "강수없음" 텍스트를 값으로 준다. UI에서는 이를
+/// 표시하지 않는 게 자연스러워 null로 정규화한다(그 외 값은 "1.0mm" 같은 원문 그대로 사용).
+String? _noPrecipitation(String? value) {
+  if (value == null || value == '강수없음') return null;
+  return value;
+}
+
+/// 초단기실황 RN1은 PCP와 달리 "강수없음" 텍스트가 아니라 단위 없는 순수 숫자(mm)로
+/// 온다("0"이면 강수 없음). 0이면 표시하지 않고, 그 외에는 단위를 붙여 보여준다.
+String? _currentPrecipitationText(String? rn1) {
+  final value = double.tryParse(rn1 ?? '');
+  if (value == null || value == 0) return null;
+  return '${rn1}mm';
+}

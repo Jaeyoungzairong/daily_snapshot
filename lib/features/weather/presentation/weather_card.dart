@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -18,7 +20,8 @@ class WeatherCard extends ConsumerStatefulWidget {
 
 class _WeatherCardState extends ConsumerState<WeatherCard> {
   late final TextEditingController _controller;
-  String? _pendingSearch;
+  Timer? _debounce;
+  String _query = '';
 
   @override
   void initState() {
@@ -28,20 +31,26 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
-  void _submit() {
-    final value = _controller.text.trim();
-    if (value.isEmpty) return;
-    setState(() => _pendingSearch = value);
+  // 기상청 지역 목록은 앱에 내장된 자산이라 매 키 입력마다 검색해도 부담이 없지만,
+  // 빠르게 타이핑할 때 결과 목록이 매 글자마다 리빌드되며 깜빡이는 걸 막기 위해
+  // 짧은 디바운스만 둔다(네트워크 지연과는 무관).
+  void _onQueryChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 150), () {
+      if (mounted) setState(() => _query = value.trim());
+    });
   }
 
   void _selectCity(CityCandidate city) {
+    _debounce?.cancel();
     ref.read(selectedCityProvider.notifier).select(city);
     setState(() {
-      _pendingSearch = null;
+      _query = '';
       _controller.text = city.name;
     });
   }
@@ -58,29 +67,19 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  decoration: const InputDecoration(
-                    labelText: '도시 이름',
-                    hintText: '예: Seoul, Anyang, Paris',
-                  ),
-                  onSubmitted: (_) => _submit(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton.filled(
-                onPressed: _submit,
-                icon: const Icon(Icons.search),
-              ),
-            ],
+          TextField(
+            controller: _controller,
+            decoration: const InputDecoration(
+              labelText: '도시 이름',
+              hintText: '예: Seoul, Anyang, Paris',
+              prefixIcon: Icon(Icons.search),
+            ),
+            onChanged: _onQueryChanged,
           ),
-          if (_pendingSearch != null) ...[
+          if (_query.isNotEmpty) ...[
             const SizedBox(height: 12),
             _CitySearchResults(
-              query: _pendingSearch!,
+              query: _query,
               onSelect: _selectCity,
             ),
           ],
@@ -121,7 +120,9 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 Text(
-                  '풍속 ${weather.windSpeed.toStringAsFixed(1)} m/s',
+                  weather.precipitationAmount == null
+                      ? '풍속 ${weather.windSpeed.toStringAsFixed(1)} m/s'
+                      : '풍속 ${weather.windSpeed.toStringAsFixed(1)} m/s · 강수량 ${weather.precipitationAmount}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 16),
@@ -155,7 +156,7 @@ class _WeeklyForecastRow extends StatelessWidget {
     final theme = Theme.of(context);
 
     return SizedBox(
-      height: 96,
+      height: 132,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: dailyForecast.length,
@@ -172,7 +173,7 @@ class _WeeklyForecastRow extends StatelessWidget {
                 Text(
                   Formatters.shortDate(day.date),
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.outline,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -182,9 +183,16 @@ class _WeeklyForecastRow extends StatelessWidget {
                 Text(
                   Formatters.temperature(day.minTemp),
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.outline,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                if (day.precipitationProbability > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${day.precipitationProbability}%',
+                    style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.primary),
+                  ),
+                ],
               ],
             ),
           );
@@ -206,12 +214,12 @@ class _HourlyForecastRow extends StatelessWidget {
     if (hourlyForecast.isEmpty) {
       return Text(
         '오늘 남은 시간별 예보가 없습니다.',
-        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       );
     }
 
     return SizedBox(
-      height: 88,
+      height: 128,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: hourlyForecast.length,
@@ -220,7 +228,7 @@ class _HourlyForecastRow extends StatelessWidget {
           final hour = hourlyForecast[index];
           final label = hour.isNow ? '지금' : Formatters.hour24(hour.time);
           return SizedBox(
-            width: 44,
+            width: 52,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -235,6 +243,20 @@ class _HourlyForecastRow extends StatelessWidget {
                 Icon(hour.icon, size: 20),
                 const SizedBox(height: 6),
                 Text(Formatters.temperature(hour.temperature), style: theme.textTheme.labelMedium),
+                if (hour.precipitationProbability > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${hour.precipitationProbability}%',
+                    style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.primary),
+                  ),
+                ],
+                if (hour.precipitationAmount != null)
+                  Text(
+                    hour.precipitationAmount!,
+                    style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
               ],
             ),
           );
