@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/theme_mode_provider.dart';
 import '../../exchange_rate/presentation/exchange_rate_card.dart';
+import '../../shortcuts/presentation/shortcuts_card.dart';
+import '../../todo/presentation/todo_card.dart';
 import '../../weather/presentation/weather_card.dart';
 
 class DashboardPage extends ConsumerWidget {
@@ -11,7 +13,9 @@ class DashboardPage extends ConsumerWidget {
   static const double _wideBreakpoint = 900;
   static const List<Widget> _cards = [
     WeatherCard(),
+    ShortcutsCard(),
     ExchangeRateCard(),
+    TodoCard(),
   ];
 
   @override
@@ -21,7 +25,7 @@ class DashboardPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('오늘의 날씨 · 환율'),
+        title: const Text('데일리 스냅샷'),
         actions: [
           IconButton(
             tooltip: isDark ? '라이트 테마로 전환' : '다크 테마로 전환',

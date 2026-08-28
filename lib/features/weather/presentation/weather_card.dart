@@ -71,7 +71,7 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
             controller: _controller,
             decoration: const InputDecoration(
               labelText: '도시 이름',
-              hintText: '예: Seoul, Anyang, Paris',
+              //hintText: '예: Seoul, Anyang, Paris',
               prefixIcon: Icon(Icons.search),
             ),
             onChanged: _onQueryChanged,
