@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
@@ -19,12 +20,41 @@ class ExchangeRateCard extends ConsumerStatefulWidget {
   ConsumerState<ExchangeRateCard> createState() => _ExchangeRateCardState();
 }
 
-class _ExchangeRateCardState extends ConsumerState<ExchangeRateCard> {
+class _ExchangeRateCardState extends ConsumerState<ExchangeRateCard> with WidgetsBindingObserver {
   final TextEditingController _amountController = TextEditingController(text: '100');
   double _foreignAmount = 100;
+  Timer? _refreshTimer;
+
+  // 환율 데이터(FutureProvider)는 한 번 fetch되면 계속 캐시되어, 앱을 오래 켜둔 채로
+  // 있으면 API가 그 사이 갱신되어도 화면은 옛날 값을 계속 보여준다. 이를 막기 위해
+  // 앱이 포그라운드로 돌아올 때, 그리고 장시간 켜둔 경우를 대비해 주기적으로 재조회한다.
+  static const _refreshInterval = Duration(minutes: 15);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshTimer = Timer.periodic(_refreshInterval, (_) => _refreshRates());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshRates();
+    }
+  }
+
+  void _refreshRates() {
+    ref.invalidate(latestRatesProvider);
+    ref.invalidate(chartHistoryProvider(
+      (ref.read(selectedCurrencyProvider), ref.read(chartPeriodProvider)),
+    ));
+  }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _amountController.dispose();
     super.dispose();
   }

@@ -121,7 +121,7 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 Text(
-                  '풍속 ${weather.windSpeed.toStringAsFixed(1)} km/h',
+                  '풍속 ${weather.windSpeed.toStringAsFixed(1)} m/s',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 16),

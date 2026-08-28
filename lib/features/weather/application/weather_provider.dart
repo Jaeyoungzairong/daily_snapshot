@@ -1,11 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/city_candidate.dart';
+import '../data/kma_weather_repository.dart';
 import '../data/weather_model.dart';
 import '../data/weather_repository.dart';
 
 final weatherRepositoryProvider = Provider<WeatherRepository>((ref) {
-  return WeatherRepository();
+  return KmaWeatherRepository();
 });
 
 /// 검색어로 도시 후보 목록을 조회한다. 빈 문자열이면 빈 목록을 반환한다.

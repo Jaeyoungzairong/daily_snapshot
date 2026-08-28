@@ -11,15 +11,15 @@ class _FakeWeatherRepository extends WeatherRepository {
     return WeatherModel(
       cityName: city.displayLabel,
       currentTemp: 20,
-      weatherCode: 0,
+      condition: WeatherCondition.clear,
       windSpeed: 5,
       maxTemp: 25,
       minTemp: 15,
       dailyForecast: [
-        DailyForecast(date: DateTime(2026, 8, 27), maxTemp: 25, minTemp: 15, weatherCode: 0),
+        DailyForecast(date: DateTime(2026, 8, 27), maxTemp: 25, minTemp: 15, condition: WeatherCondition.clear),
       ],
       hourlyForecast: [
-        HourlyForecast(time: DateTime(2026, 8, 27, 14), temperature: 20, weatherCode: 0, isNow: true),
+        HourlyForecast(time: DateTime(2026, 8, 27, 14), temperature: 20, condition: WeatherCondition.clear, isNow: true),
       ],
     );
   }

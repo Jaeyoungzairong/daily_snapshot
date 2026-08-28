@@ -23,7 +23,7 @@ class DashboardPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Weather & FX Dashboard'),
+        title: const Text('오늘의 날씨 · 환율'),
         actions: [
           IconButton(
             tooltip: isDark ? '라이트 테마로 전환' : '다크 테마로 전환',

@@ -28,7 +28,7 @@ void main() {
 
       expect(model.cityName, 'Seoul');
       expect(model.currentTemp, 23.4);
-      expect(model.weatherCode, 1);
+      expect(model.condition, WeatherCondition.partlyCloudy);
       expect(model.windSpeed, 12.3);
       expect(model.maxTemp, 27.1);
       expect(model.minTemp, 18.9);
@@ -91,7 +91,7 @@ void main() {
       expect(model.dailyForecast.first.date, DateTime(2026, 8, 27));
       expect(model.dailyForecast.first.maxTemp, 30.0);
       expect(model.dailyForecast.last.date, DateTime(2026, 9, 2));
-      expect(model.dailyForecast.last.weatherCode, 81);
+      expect(model.dailyForecast.last.condition, WeatherCondition.showers);
       expect(model.dailyForecast[1].description, '비');
     });
 
@@ -129,6 +129,27 @@ void main() {
       expect(model.hourlyForecast.first.temperature, 23.4);
       expect(model.hourlyForecast.last.time, DateTime(2026, 8, 27, 23));
       expect(model.hourlyForecast.last.isNow, isFalse);
+    });
+  });
+
+  group('WeatherCondition.fromKmaSkyPty', () {
+    test('uses sky state when there is no precipitation', () {
+      expect(WeatherCondition.fromKmaSkyPty(sky: 1, pty: 0), WeatherCondition.clear);
+      expect(WeatherCondition.fromKmaSkyPty(sky: 3, pty: 0), WeatherCondition.partlyCloudy);
+      expect(WeatherCondition.fromKmaSkyPty(sky: 4, pty: 0), WeatherCondition.cloudy);
+    });
+
+    test('precipitation type overrides sky state', () {
+      expect(WeatherCondition.fromKmaSkyPty(sky: 1, pty: 1), WeatherCondition.rain);
+      expect(WeatherCondition.fromKmaSkyPty(sky: 1, pty: 2), WeatherCondition.sleet);
+      expect(WeatherCondition.fromKmaSkyPty(sky: 1, pty: 3), WeatherCondition.snow);
+      expect(WeatherCondition.fromKmaSkyPty(sky: 1, pty: 4), WeatherCondition.showers);
+    });
+
+    test('초단기예보 전용 세분류(5/6/7)도 대응하는 단기예보 코드와 같은 조건으로 매핑된다', () {
+      expect(WeatherCondition.fromKmaSkyPty(sky: 1, pty: 5), WeatherCondition.rain);
+      expect(WeatherCondition.fromKmaSkyPty(sky: 1, pty: 6), WeatherCondition.sleet);
+      expect(WeatherCondition.fromKmaSkyPty(sky: 1, pty: 7), WeatherCondition.snow);
     });
   });
 }

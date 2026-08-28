@@ -4,7 +4,7 @@ class WeatherModel {
   const WeatherModel({
     required this.cityName,
     required this.currentTemp,
-    required this.weatherCode,
+    required this.condition,
     required this.windSpeed,
     required this.maxTemp,
     required this.minTemp,
@@ -12,6 +12,8 @@ class WeatherModel {
     required this.hourlyForecast,
   });
 
+  /// Open-Meteo forecast API 응답 파싱. 현재는 사용하지 않는 OpenMeteoWeatherRepository
+  /// (기상청으로 교체됨, 추후 재사용 대비 보존) 전용이다.
   factory WeatherModel.fromJson({
     required String cityName,
     required Map<String, dynamic> json,
@@ -30,7 +32,7 @@ class WeatherModel {
         date: DateTime.parse(dates[i]),
         maxTemp: maxTemps[i].toDouble(),
         minTemp: minTemps[i].toDouble(),
-        weatherCode: weatherCodes[i].toInt(),
+        condition: WeatherCondition.fromWmoCode(weatherCodes[i].toInt()),
       );
     });
 
@@ -50,7 +52,7 @@ class WeatherModel {
         hourlyForecast.add(HourlyForecast(
           time: time,
           temperature: hourTemps[i].toDouble(),
-          weatherCode: hourCodes[i].toInt(),
+          condition: WeatherCondition.fromWmoCode(hourCodes[i].toInt()),
           isNow: time.hour == currentTime.hour,
         ));
       }
@@ -59,7 +61,7 @@ class WeatherModel {
     return WeatherModel(
       cityName: cityName,
       currentTemp: (current['temperature_2m'] as num).toDouble(),
-      weatherCode: (current['weather_code'] as num).toInt(),
+      condition: WeatherCondition.fromWmoCode((current['weather_code'] as num).toInt()),
       windSpeed: (current['wind_speed_10m'] as num).toDouble(),
       maxTemp: dailyForecast.first.maxTemp,
       minTemp: dailyForecast.first.minTemp,
@@ -70,19 +72,19 @@ class WeatherModel {
 
   final String cityName;
   final double currentTemp;
-  final int weatherCode;
+  final WeatherCondition condition;
   final double windSpeed;
   final num maxTemp;
   final num minTemp;
 
-  /// 오늘을 포함해 Open-Meteo가 기본으로 제공하는 최대 7일치 일별 예보.
+  /// 기상청 기준 오늘/내일/모레 3일치 일별 예보. (Open-Meteo 경로에서는 forecast_days만큼)
   final List<DailyForecast> dailyForecast;
 
-  /// 오늘 현재 시각 이후부터 자정까지의 시간별 예보.
+  /// 현재 시각부터 24시간 후까지의 시간별 예보.
   final List<HourlyForecast> hourlyForecast;
 
-  String get description => weatherDescription(weatherCode);
-  IconData get icon => weatherIcon(weatherCode);
+  String get description => condition.description;
+  IconData get icon => condition.icon;
 }
 
 class DailyForecast {
@@ -90,97 +92,202 @@ class DailyForecast {
     required this.date,
     required this.maxTemp,
     required this.minTemp,
-    required this.weatherCode,
+    required this.condition,
   });
 
   final DateTime date;
   final double maxTemp;
   final double minTemp;
-  final int weatherCode;
+  final WeatherCondition condition;
 
-  String get description => weatherDescription(weatherCode);
-  IconData get icon => weatherIcon(weatherCode);
+  String get description => condition.description;
+  IconData get icon => condition.icon;
 }
 
 class HourlyForecast {
   const HourlyForecast({
     required this.time,
     required this.temperature,
-    required this.weatherCode,
+    required this.condition,
     required this.isNow,
   });
 
   final DateTime time;
   final double temperature;
-  final int weatherCode;
+  final WeatherCondition condition;
 
-  /// 오늘 시간별 예보 중 현재 시각(API가 응답한 `current.time` 기준)과 같은 시간대인지 여부.
+  /// 시간별 예보 중 현재 시각과 같은 시간대인지 여부.
   final bool isNow;
 
-  String get description => weatherDescription(weatherCode);
-  IconData get icon => weatherIcon(weatherCode);
+  String get description => condition.description;
+  IconData get icon => condition.icon;
 }
 
-/// WMO Weather interpretation codes (Open-Meteo)
-String weatherDescription(int code) {
-  switch (code) {
-    case 0:
-      return '맑음';
-    case 1:
-    case 2:
-      return '대체로 맑음';
-    case 3:
-      return '흐림';
-    case 45:
-    case 48:
-      return '안개';
-    case 51:
-    case 53:
-    case 55:
-      return '이슬비';
-    case 56:
-    case 57:
-      return '어는 이슬비';
-    case 61:
-    case 63:
-    case 65:
-      return '비';
-    case 66:
-    case 67:
-      return '어는 비';
-    case 71:
-    case 73:
-    case 75:
-      return '눈';
-    case 77:
-      return '싸락눈';
-    case 80:
-    case 81:
-    case 82:
-      return '소나기';
-    case 85:
-    case 86:
-      return '눈 소나기';
-    case 95:
-      return '뇌우';
-    case 96:
-    case 99:
-      return '우박 동반 뇌우';
-    default:
-      return '알 수 없음';
+/// 날씨 상태. 데이터 소스(Open-Meteo의 WMO 코드, 기상청의 SKY/PTY 코드)가 서로 다른
+/// 코드 체계를 쓰기 때문에, 각 리포지토리가 자신의 코드를 이 공통 조건으로 변환해서
+/// WeatherModel에 담는다.
+enum WeatherCondition {
+  clear,
+  partlyCloudy,
+  cloudy,
+  fog,
+  drizzle,
+  freezingDrizzle,
+  rain,
+  freezingRain,
+  sleet,
+  snow,
+  snowGrains,
+  showers,
+  snowShowers,
+  thunderstorm,
+  thunderstormHail,
+  unknown;
+
+  /// WMO Weather interpretation codes (Open-Meteo). 현재 미사용 경로 전용으로 보존.
+  factory WeatherCondition.fromWmoCode(int code) {
+    switch (code) {
+      case 0:
+        return WeatherCondition.clear;
+      case 1:
+      case 2:
+        return WeatherCondition.partlyCloudy;
+      case 3:
+        return WeatherCondition.cloudy;
+      case 45:
+      case 48:
+        return WeatherCondition.fog;
+      case 51:
+      case 53:
+      case 55:
+        return WeatherCondition.drizzle;
+      case 56:
+      case 57:
+        return WeatherCondition.freezingDrizzle;
+      case 61:
+      case 63:
+      case 65:
+        return WeatherCondition.rain;
+      case 66:
+      case 67:
+        return WeatherCondition.freezingRain;
+      case 71:
+      case 73:
+      case 75:
+        return WeatherCondition.snow;
+      case 77:
+        return WeatherCondition.snowGrains;
+      case 80:
+      case 81:
+      case 82:
+        return WeatherCondition.showers;
+      case 85:
+      case 86:
+        return WeatherCondition.snowShowers;
+      case 95:
+        return WeatherCondition.thunderstorm;
+      case 96:
+      case 99:
+        return WeatherCondition.thunderstormHail;
+      default:
+        return WeatherCondition.unknown;
+    }
   }
-}
 
-IconData weatherIcon(int code) {
-  if (code == 0) return Icons.wb_sunny;
-  if (code == 1 || code == 2) return Icons.wb_cloudy;
-  if (code == 3) return Icons.cloud;
-  if (code == 45 || code == 48) return Icons.foggy;
-  if (code >= 51 && code <= 57) return Icons.water_drop_outlined; // 이슬비/어는 이슬비
-  if (code >= 61 && code <= 67) return Icons.water_drop; // 비/어는 비
-  if (code >= 71 && code <= 77) return Icons.ac_unit;
-  if (code >= 80 && code <= 82) return Icons.umbrella; // 소나기
-  if (code >= 85 && code <= 86) return Icons.ac_unit;
-  if (code >= 95) return Icons.thunderstorm;
-  return Icons.help_outline;
+  /// 기상청 단기예보의 하늘상태(SKY: 1 맑음, 3 구름많음, 4 흐림)와
+  /// 강수형태(PTY: 0 없음, 1 비, 2 비/눈, 3 눈, 4 소나기, 5~7은 초단기예보 전용 세분류)를
+  /// 조건으로 변환한다. 강수가 있으면(PTY != 0) 하늘상태보다 강수형태를 우선한다.
+  factory WeatherCondition.fromKmaSkyPty({required int sky, required int pty}) {
+    switch (pty) {
+      case 1:
+      case 5:
+        return WeatherCondition.rain;
+      case 2:
+      case 6:
+        return WeatherCondition.sleet;
+      case 3:
+      case 7:
+        return WeatherCondition.snow;
+      case 4:
+        return WeatherCondition.showers;
+    }
+    switch (sky) {
+      case 1:
+        return WeatherCondition.clear;
+      case 3:
+        return WeatherCondition.partlyCloudy;
+      case 4:
+        return WeatherCondition.cloudy;
+      default:
+        return WeatherCondition.unknown;
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case WeatherCondition.clear:
+        return '맑음';
+      case WeatherCondition.partlyCloudy:
+        return '대체로 맑음';
+      case WeatherCondition.cloudy:
+        return '흐림';
+      case WeatherCondition.fog:
+        return '안개';
+      case WeatherCondition.drizzle:
+        return '이슬비';
+      case WeatherCondition.freezingDrizzle:
+        return '어는 이슬비';
+      case WeatherCondition.rain:
+        return '비';
+      case WeatherCondition.freezingRain:
+        return '어는 비';
+      case WeatherCondition.sleet:
+        return '비/눈';
+      case WeatherCondition.snow:
+        return '눈';
+      case WeatherCondition.snowGrains:
+        return '싸락눈';
+      case WeatherCondition.showers:
+        return '소나기';
+      case WeatherCondition.snowShowers:
+        return '눈 소나기';
+      case WeatherCondition.thunderstorm:
+        return '뇌우';
+      case WeatherCondition.thunderstormHail:
+        return '우박 동반 뇌우';
+      case WeatherCondition.unknown:
+        return '알 수 없음';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case WeatherCondition.clear:
+        return Icons.wb_sunny;
+      case WeatherCondition.partlyCloudy:
+        return Icons.wb_cloudy;
+      case WeatherCondition.cloudy:
+        return Icons.cloud;
+      case WeatherCondition.fog:
+        return Icons.foggy;
+      case WeatherCondition.drizzle:
+      case WeatherCondition.freezingDrizzle:
+        return Icons.water_drop_outlined;
+      case WeatherCondition.rain:
+      case WeatherCondition.freezingRain:
+        return Icons.water_drop;
+      case WeatherCondition.sleet:
+      case WeatherCondition.snow:
+      case WeatherCondition.snowGrains:
+      case WeatherCondition.snowShowers:
+        return Icons.ac_unit;
+      case WeatherCondition.showers:
+        return Icons.umbrella;
+      case WeatherCondition.thunderstorm:
+      case WeatherCondition.thunderstormHail:
+        return Icons.thunderstorm;
+      case WeatherCondition.unknown:
+        return Icons.help_outline;
+    }
+  }
 }
