@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
@@ -19,12 +20,41 @@ class ExchangeRateCard extends ConsumerStatefulWidget {
   ConsumerState<ExchangeRateCard> createState() => _ExchangeRateCardState();
 }
 
-class _ExchangeRateCardState extends ConsumerState<ExchangeRateCard> {
+class _ExchangeRateCardState extends ConsumerState<ExchangeRateCard> with WidgetsBindingObserver {
   final TextEditingController _amountController = TextEditingController(text: '100');
   double _foreignAmount = 100;
+  Timer? _refreshTimer;
+
+  // 환율 데이터(FutureProvider)는 한 번 fetch되면 계속 캐시되어, 앱을 오래 켜둔 채로
+  // 있으면 API가 그 사이 갱신되어도 화면은 옛날 값을 계속 보여준다. 이를 막기 위해
+  // 앱이 포그라운드로 돌아올 때, 그리고 장시간 켜둔 경우를 대비해 주기적으로 재조회한다.
+  static const _refreshInterval = Duration(minutes: 15);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshTimer = Timer.periodic(_refreshInterval, (_) => _refreshRates());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshRates();
+    }
+  }
+
+  void _refreshRates() {
+    ref.invalidate(latestRatesProvider);
+    ref.invalidate(chartHistoryProvider(
+      (ref.read(selectedCurrencyProvider), ref.read(chartPeriodProvider)),
+    ));
+  }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _amountController.dispose();
     super.dispose();
   }
@@ -40,17 +70,25 @@ class _ExchangeRateCardState extends ConsumerState<ExchangeRateCard> {
       title: '환율',
       icon: Icons.currency_exchange,
       accentColor: accentColor,
-      trailing: DropdownButton<String>(
-        value: selectedCode,
-        underline: const SizedBox.shrink(),
-        items: [
+      trailing: DropdownMenu<String>(
+        initialSelection: selectedCode,
+        // 필드 자체는 짧은 코드("USD") 기준으로 자동으로 좁게 잡히게 두고, 펼쳤을 때 나오는
+        // 메뉴만 menuStyle로 따로 넓혀서 "USD · 미국 달러" 같은 전체 이름이 줄바꿈 없이 보이게 한다.
+        textStyle: theme.textTheme.bodyMedium,
+        menuStyle: const MenuStyle(
+          minimumSize: WidgetStatePropertyAll(Size(190, 0)),
+        ),
+        trailingIcon: const Icon(Icons.expand_more, size: 20),
+        selectedTrailingIcon: const Icon(Icons.expand_less, size: 20),
+        dropdownMenuEntries: [
           for (final currency in CurrencyCatalog.targetCurrencies)
-            DropdownMenuItem(
+            DropdownMenuEntry(
               value: currency.code,
-              child: Text('${currency.code} · ${currency.displayName}'),
+              label: currency.code,
+              labelWidget: Text('${currency.code} · ${currency.displayName}'),
             ),
         ],
-        onChanged: (value) {
+        onSelected: (value) {
           if (value == null) return;
           ref.read(selectedCurrencyProvider.notifier).select(value);
         },

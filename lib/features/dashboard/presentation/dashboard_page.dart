@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/theme_mode_provider.dart';
 import '../../exchange_rate/presentation/exchange_rate_card.dart';
-import '../../stock/presentation/stock_placeholder_card.dart';
+import '../../shortcuts/presentation/shortcuts_card.dart';
+import '../../todo/presentation/todo_card.dart';
 import '../../weather/presentation/weather_card.dart';
 
 class DashboardPage extends ConsumerWidget {
@@ -12,8 +13,9 @@ class DashboardPage extends ConsumerWidget {
   static const double _wideBreakpoint = 900;
   static const List<Widget> _cards = [
     WeatherCard(),
+    ShortcutsCard(),
     ExchangeRateCard(),
-    StockPlaceholderCard(),
+    TodoCard(),
   ];
 
   @override
@@ -23,7 +25,17 @@ class DashboardPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Weather & FX Dashboard'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.asset('assets/images/app_icon.png', width: 28, height: 28),
+            ),
+            const SizedBox(width: 10),
+            const Text('데일리 스냅샷'),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: isDark ? '라이트 테마로 전환' : '다크 테마로 전환',
