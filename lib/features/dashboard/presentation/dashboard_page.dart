@@ -25,7 +25,17 @@ class DashboardPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('데일리 스냅샷'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.asset('assets/images/app_icon.png', width: 28, height: 28),
+            ),
+            const SizedBox(width: 10),
+            const Text('데일리 스냅샷'),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: isDark ? '라이트 테마로 전환' : '다크 테마로 전환',
