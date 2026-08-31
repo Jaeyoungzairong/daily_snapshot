@@ -49,3 +49,6 @@ app.*.map.json
 
 # Local secrets (API keys) - see lib/core/config/secrets.example.json
 lib/core/config/secrets.json
+
+# Local dev-machine convenience script (PC-specific absolute paths)
+/serve_static.bat

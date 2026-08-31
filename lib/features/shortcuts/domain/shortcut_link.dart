@@ -17,4 +17,7 @@ const List<ShortcutLink> shortcutLinks = [
   ShortcutLink(label: '카카오맵', icon: Icons.map, url: 'https://map.kakao.com/'),
   ShortcutLink(label: 'Gmail', icon: Icons.mail, url: 'https://mail.google.com/'),
   ShortcutLink(label: '구글 드라이브', icon: Icons.cloud, url: 'https://drive.google.com/'),
+  ShortcutLink(label: 'GitHub', icon: Icons.code, url: 'https://github.com/'),
+  ShortcutLink(label: 'ChatGPT', icon: Icons.chat, url: 'https://chatgpt.com/'),
+  ShortcutLink(label: 'Claude', icon: Icons.smart_toy, url: 'https://claude.ai/'),
 ];

@@ -17,6 +17,9 @@ void main() {
     expect(find.text('카카오맵'), findsOneWidget);
     expect(find.text('Gmail'), findsOneWidget);
     expect(find.text('구글 드라이브'), findsOneWidget);
+    expect(find.text('GitHub'), findsOneWidget);
+    expect(find.text('ChatGPT'), findsOneWidget);
+    expect(find.text('Claude'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

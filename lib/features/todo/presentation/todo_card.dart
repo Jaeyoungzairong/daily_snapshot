@@ -7,7 +7,24 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/dashboard_card.dart';
 import '../../../core/widgets/loading_error_view.dart';
 import '../application/todo_provider.dart';
+import '../data/memo_item.dart';
 import '../data/todo_item.dart';
+
+/// 삭제 전 실수 방지용 확인 다이얼로그. 사용자가 "삭제"를 눌렀을 때만 true를 반환한다.
+Future<bool> _confirmDelete(BuildContext context, {required String title, required String message}) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('삭제')),
+      ],
+    ),
+  );
+  return confirmed ?? false;
+}
 
 class TodoCard extends ConsumerStatefulWidget {
   const TodoCard({super.key});
@@ -18,15 +35,20 @@ class TodoCard extends ConsumerStatefulWidget {
 
 class _TodoCardState extends ConsumerState<TodoCard> {
   final TextEditingController _newItemController = TextEditingController();
-  final TextEditingController _memoController = TextEditingController();
-  Timer? _memoDebounce;
+  final TextEditingController _memoTitleController = TextEditingController();
+  final TextEditingController _memoContentController = TextEditingController();
+  Timer? _memoTitleDebounce;
+  Timer? _memoContentDebounce;
   bool _memoInitialized = false;
+  String? _selectedMemoId;
 
   @override
   void dispose() {
-    _memoDebounce?.cancel();
+    _memoTitleDebounce?.cancel();
+    _memoContentDebounce?.cancel();
     _newItemController.dispose();
-    _memoController.dispose();
+    _memoTitleController.dispose();
+    _memoContentController.dispose();
     super.dispose();
   }
 
@@ -37,10 +59,56 @@ class _TodoCardState extends ConsumerState<TodoCard> {
     _newItemController.clear();
   }
 
-  void _onMemoChanged(String value) {
-    _memoDebounce?.cancel();
-    _memoDebounce = Timer(const Duration(milliseconds: 500), () {
-      ref.read(todoMemoProvider.notifier).updateMemo(value);
+  void _selectMemo(String id) {
+    _memoTitleDebounce?.cancel();
+    _memoContentDebounce?.cancel();
+    final memos = ref.read(todoMemoProvider).value ?? [];
+    final index = memos.indexWhere((memo) => memo.id == id);
+    if (index == -1) return;
+    final memo = memos[index];
+    setState(() {
+      _selectedMemoId = memo.id;
+      _memoTitleController.text = memo.title;
+      _memoContentController.text = memo.content;
+    });
+  }
+
+  Future<void> _addMemo() async {
+    final memo = await ref.read(todoMemoProvider.notifier).addMemo();
+    _selectMemo(memo.id);
+  }
+
+  Future<void> _deleteSelectedMemo() async {
+    final id = _selectedMemoId;
+    if (id == null) return;
+    await ref.read(todoMemoProvider.notifier).removeMemo(id);
+    final remaining = ref.read(todoMemoProvider).value ?? [];
+    if (remaining.isEmpty) {
+      setState(() {
+        _selectedMemoId = null;
+        _memoTitleController.clear();
+        _memoContentController.clear();
+      });
+    } else {
+      _selectMemo(remaining.first.id);
+    }
+  }
+
+  void _onMemoTitleChanged(String value) {
+    final id = _selectedMemoId;
+    if (id == null) return;
+    _memoTitleDebounce?.cancel();
+    _memoTitleDebounce = Timer(const Duration(milliseconds: 500), () {
+      ref.read(todoMemoProvider.notifier).renameMemo(id, value);
+    });
+  }
+
+  void _onMemoContentChanged(String value) {
+    final id = _selectedMemoId;
+    if (id == null) return;
+    _memoContentDebounce?.cancel();
+    _memoContentDebounce = Timer(const Duration(milliseconds: 500), () {
+      ref.read(todoMemoProvider.notifier).updateContent(id, value);
     });
   }
 
@@ -48,14 +116,19 @@ class _TodoCardState extends ConsumerState<TodoCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final itemsAsync = ref.watch(todoListProvider);
+    final memosAsync = ref.watch(todoMemoProvider);
 
-    // 메모는 비동기로 로드되므로, 처음 값이 도착했을 때 한 번만 컨트롤러에 채운다
-    // (그 이후엔 사용자가 입력 중인 텍스트를 덮어쓰면 안 되므로).
+    // 메모 목록은 비동기로 로드되므로, 처음 도착했을 때 한 번만 첫 메모를 선택해 채운다
+    // (그 이후엔 사용자가 선택/입력 중인 내용을 덮어쓰면 안 되므로).
     ref.listen(todoMemoProvider, (previous, next) {
-      final memo = next.value;
-      if (!_memoInitialized && memo != null) {
+      final memos = next.value;
+      if (!_memoInitialized && memos != null) {
         _memoInitialized = true;
-        _memoController.text = memo;
+        if (memos.isNotEmpty) {
+          _selectedMemoId = memos.first.id;
+          _memoTitleController.text = memos.first.title;
+          _memoContentController.text = memos.first.content;
+        }
       }
     });
 
@@ -99,17 +172,154 @@ class _TodoCardState extends ConsumerState<TodoCard> {
             const SizedBox(height: 12),
             Text('메모', style: theme.textTheme.labelLarge),
             const SizedBox(height: 8),
-            TextField(
-              controller: _memoController,
-              maxLines: 20,
-              // decoration: const InputDecoration(
-              //   hintText: '회의 내용, 생각 등 자유롭게 적어보세요',
-              // ),
-              onChanged: _onMemoChanged,
+            memosAsync.when(
+              loading: () => const LoadingView(),
+              error: (error, _) => ErrorView(
+                message: error.toString(),
+                onRetry: () => ref.invalidate(todoMemoProvider),
+              ),
+              data: (memos) => _MemoSection(
+                memos: memos,
+                selectedMemoId: _selectedMemoId,
+                titleController: _memoTitleController,
+                contentController: _memoContentController,
+                onSelect: _selectMemo,
+                onAdd: _addMemo,
+                onDelete: _deleteSelectedMemo,
+                onTitleChanged: _onMemoTitleChanged,
+                onContentChanged: _onMemoContentChanged,
+              ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MemoSection extends StatelessWidget {
+  const _MemoSection({
+    required this.memos,
+    required this.selectedMemoId,
+    required this.titleController,
+    required this.contentController,
+    required this.onSelect,
+    required this.onAdd,
+    required this.onDelete,
+    required this.onTitleChanged,
+    required this.onContentChanged,
+  });
+
+  final List<MemoItem> memos;
+  final String? selectedMemoId;
+  final TextEditingController titleController;
+  final TextEditingController contentController;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onAdd;
+  final VoidCallback onDelete;
+  final ValueChanged<String> onTitleChanged;
+  final ValueChanged<String> onContentChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasSelection = selectedMemoId != null && memos.any((memo) => memo.id == selectedMemoId);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _MemoChipWrap(memos: memos, selectedMemoId: selectedMemoId, onSelect: onSelect, onAdd: onAdd),
+        const SizedBox(height: 12),
+        if (hasSelection) ...[
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: titleController,
+                  style: theme.textTheme.titleSmall,
+                  decoration: const InputDecoration(labelText: '제목', isDense: true),
+                  onChanged: onTitleChanged,
+                ),
+              ),
+              IconButton(
+                onPressed: () async {
+                  final confirmed = await _confirmDelete(
+                    context,
+                    title: '메모 삭제',
+                    message: '이 메모를 삭제할까요? 삭제한 내용은 복구할 수 없습니다.',
+                  );
+                  if (confirmed) onDelete();
+                },
+                icon: const Icon(Icons.delete_outline, size: 18),
+                tooltip: '메모 삭제',
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: contentController,
+            maxLines: 20,
+            onChanged: onContentChanged,
+          ),
+        ] else
+          Text(
+            '메모가 없습니다. + 버튼을 눌러 추가해보세요.',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+          ),
+      ],
+    );
+  }
+}
+
+class _MemoChipWrap extends StatelessWidget {
+  const _MemoChipWrap({
+    required this.memos,
+    required this.selectedMemoId,
+    required this.onSelect,
+    required this.onAdd,
+  });
+
+  final List<MemoItem> memos;
+  final String? selectedMemoId;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 카드 폭에 맞춰 칩 하나의 최대 너비를 조절한다: 데스크톱 그리드(폭 넓음)에서는
+        // 제목이 덜 잘리도록 더 길게, 모바일 컬럼(폭 좁음)에서는 한 줄에 과하게 크지
+        // 않도록 줄인다.
+        final chipMaxWidth = (constraints.maxWidth / 2).clamp(120.0, 260.0);
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (final memo in memos)
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: chipMaxWidth),
+                child: ChoiceChip(
+                  label: Text(
+                    memo.title.trim().isEmpty ? '(제목 없음)' : memo.title,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  showCheckmark: false,
+                  visualDensity: VisualDensity.compact,
+                  selected: memo.id == selectedMemoId,
+                  onSelected: (_) => onSelect(memo.id),
+                ),
+              ),
+            IconButton.filledTonal(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add),
+              tooltip: '새 메모 추가',
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -155,7 +365,14 @@ class _TodoList extends ConsumerWidget {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
-              onPressed: () => ref.read(todoListProvider.notifier).clearCompleted(),
+              onPressed: () async {
+                final confirmed = await _confirmDelete(
+                  context,
+                  title: '완료 항목 지우기',
+                  message: '완료된 항목을 모두 지울까요?',
+                );
+                if (confirmed) ref.read(todoListProvider.notifier).clearCompleted();
+              },
               child: const Text('완료 항목 지우기'),
             ),
           ),
@@ -188,7 +405,14 @@ class _TodoRow extends StatelessWidget {
           ),
         ),
         IconButton(
-          onPressed: onDelete,
+          onPressed: () async {
+            final confirmed = await _confirmDelete(
+              context,
+              title: '할 일 삭제',
+              message: '"${item.text}" 항목을 삭제할까요?',
+            );
+            if (confirmed) onDelete();
+          },
           icon: const Icon(Icons.delete_outline, size: 18),
           tooltip: '삭제',
           visualDensity: VisualDensity.compact,

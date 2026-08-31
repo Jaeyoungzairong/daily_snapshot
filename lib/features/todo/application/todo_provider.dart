@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/memo_item.dart';
 import '../data/todo_item.dart';
 import '../data/todo_repository.dart';
 
@@ -69,19 +70,59 @@ List<TodoItem> sortedForDisplay(List<TodoItem> items) {
   return [...pending, ...done];
 }
 
-class TodoMemoNotifier extends AsyncNotifier<String> {
+class TodoMemoNotifier extends AsyncNotifier<List<MemoItem>> {
   late final TodoRepository _repository;
 
+  // TodoListNotifier와 같은 이유로 타임스탬프에 인스턴스 카운터를 더해 id 충돌을 막는다.
+  int _idSequence = 0;
+
   @override
-  Future<String> build() async {
+  Future<List<MemoItem>> build() async {
     _repository = ref.watch(todoRepositoryProvider);
-    return _repository.loadMemo();
+    return _repository.loadMemos();
   }
 
-  Future<void> updateMemo(String memo) async {
-    state = AsyncData(memo);
-    await _repository.saveMemo(memo);
+  Future<MemoItem> addMemo() async {
+    final current = state.value ?? [];
+    final now = DateTime.now();
+    final memo = MemoItem(
+      id: '${now.microsecondsSinceEpoch}-${_idSequence++}',
+      title: '새 메모',
+      content: '',
+      createdAt: now,
+      updatedAt: now,
+    );
+    await _persist([...current, memo]);
+    return memo;
+  }
+
+  Future<void> renameMemo(String id, String title) async {
+    final current = state.value ?? [];
+    final updated = [
+      for (final memo in current)
+        if (memo.id == id) memo.copyWith(title: title, updatedAt: DateTime.now()) else memo,
+    ];
+    await _persist(updated);
+  }
+
+  Future<void> updateContent(String id, String content) async {
+    final current = state.value ?? [];
+    final updated = [
+      for (final memo in current)
+        if (memo.id == id) memo.copyWith(content: content, updatedAt: DateTime.now()) else memo,
+    ];
+    await _persist(updated);
+  }
+
+  Future<void> removeMemo(String id) async {
+    final current = state.value ?? [];
+    await _persist(current.where((memo) => memo.id != id).toList());
+  }
+
+  Future<void> _persist(List<MemoItem> memos) async {
+    state = AsyncData(memos);
+    await _repository.saveMemos(memos);
   }
 }
 
-final todoMemoProvider = AsyncNotifierProvider<TodoMemoNotifier, String>(TodoMemoNotifier.new);
+final todoMemoProvider = AsyncNotifierProvider<TodoMemoNotifier, List<MemoItem>>(TodoMemoNotifier.new);

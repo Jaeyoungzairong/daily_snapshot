@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 abstract class KeyValueStore {
   Future<String?> getString(String key);
   Future<void> setString(String key, String value);
+  Future<void> remove(String key);
 }
 
 class SharedPreferencesKeyValueStore implements KeyValueStore {
@@ -18,4 +19,7 @@ class SharedPreferencesKeyValueStore implements KeyValueStore {
 
   @override
   Future<void> setString(String key, String value) => _preferences.setString(key, value);
+
+  @override
+  Future<void> remove(String key) => _preferences.remove(key);
 }
