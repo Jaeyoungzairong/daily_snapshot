@@ -23,9 +23,12 @@ jobs:
         with:
           channel: stable
       - run: flutter pub get
-      - run: >
-          flutter build web --base-href "/${{ github.event.repository.name }}/"
-          --dart-define=KMA_SERVICE_KEY=${{ secrets.KMA_SERVICE_KEY }}
+      - name: Build web
+        run: |
+          APP_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+          flutter build web --base-href "/${{ github.event.repository.name }}/" \
+            --dart-define=KMA_SERVICE_KEY=${{ secrets.KMA_SERVICE_KEY }} \
+            --dart-define=APP_VERSION="$APP_VERSION"
       - uses: actions/upload-pages-artifact@v5
         with:
           path: build/web

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -72,6 +73,11 @@ class _ExchangeRateCardState extends ConsumerState<ExchangeRateCard> with Widget
       accentColor: accentColor,
       trailing: DropdownMenu<String>(
         initialSelection: selectedCode,
+        // 통화 목록에서 고르기만 하면 되므로 텍스트 입력(키보드/필터링)은 막아 순수 선택
+        // 드롭다운처럼 동작하게 한다.
+        requestFocusOnTap: false,
+        enableFilter: false,
+        enableSearch: false,
         // 필드 자체는 짧은 코드("USD") 기준으로 자동으로 좁게 잡히게 두고, 펼쳤을 때 나오는
         // 메뉴만 menuStyle로 따로 넓혀서 "USD · 미국 달러" 같은 전체 이름이 줄바꿈 없이 보이게 한다.
         textStyle: theme.textTheme.bodyMedium,
@@ -190,7 +196,8 @@ class _Converter extends StatelessWidget {
           width: 130,
           child: TextField(
             controller: controller,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: TextInputType.text,
+            inputFormatters: [_NumericInputFormatter()],
             decoration: InputDecoration(suffixText: rate.currency.code),
             onChanged: (value) => onChanged(double.tryParse(value) ?? 0),
           ),
@@ -403,4 +410,33 @@ double _niceInterval(double range) {
     niceResidual = 1;
   }
   return niceResidual * magnitude;
+}
+
+/// 숫자/소수점 외 문자(한글, 영문 등)를 걸러내고, 소수점은 하나만 허용한다. 단, IME가
+/// 조합 중인 동안(composing)은 손대지 않는다 — 조합 중에 텍스트를 수정하면 이미 확정된
+/// 문자까지 같이 사라지는 문제가 한글 입력에서 확인되었다.
+class _NumericInputFormatter extends TextInputFormatter {
+  static final RegExp _allowed = RegExp(r'[0-9.]');
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    if (newValue.composing.isValid) return newValue;
+
+    final text = newValue.text;
+    final buffer = StringBuffer();
+    var newOffset = 0;
+    var hasDot = false;
+    for (var i = 0; i < text.length; i++) {
+      final char = text[i];
+      if (!_allowed.hasMatch(char)) continue;
+      if (char == '.' && hasDot) continue; // 소수점은 하나만 허용
+      if (char == '.') hasDot = true;
+      buffer.write(char);
+      if (i < newValue.selection.end) newOffset++;
+    }
+    return TextEditingValue(
+      text: buffer.toString(),
+      selection: TextSelection.collapsed(offset: newOffset),
+    );
+  }
 }

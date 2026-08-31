@@ -1,5 +1,5 @@
 import 'package:daily_snapshot/features/todo/application/todo_provider.dart';
-import 'package:daily_snapshot/features/todo/data/key_value_store.dart';
+import 'package:daily_snapshot/core/data/key_value_store.dart';
 import 'package:daily_snapshot/features/todo/data/todo_repository.dart';
 import 'package:daily_snapshot/features/todo/presentation/todo_card.dart';
 import 'package:flutter/material.dart';

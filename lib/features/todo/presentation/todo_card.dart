@@ -78,6 +78,12 @@ class _TodoCardState extends ConsumerState<TodoCard> {
     _selectMemo(memo.id);
   }
 
+  Future<void> _moveSelectedMemo(int delta) async {
+    final id = _selectedMemoId;
+    if (id == null) return;
+    await ref.read(todoMemoProvider.notifier).moveMemo(id, delta);
+  }
+
   Future<void> _deleteSelectedMemo() async {
     final id = _selectedMemoId;
     if (id == null) return;
@@ -186,6 +192,7 @@ class _TodoCardState extends ConsumerState<TodoCard> {
                 onSelect: _selectMemo,
                 onAdd: _addMemo,
                 onDelete: _deleteSelectedMemo,
+                onMove: _moveSelectedMemo,
                 onTitleChanged: _onMemoTitleChanged,
                 onContentChanged: _onMemoContentChanged,
               ),
@@ -206,6 +213,7 @@ class _MemoSection extends StatelessWidget {
     required this.onSelect,
     required this.onAdd,
     required this.onDelete,
+    required this.onMove,
     required this.onTitleChanged,
     required this.onContentChanged,
   });
@@ -217,13 +225,15 @@ class _MemoSection extends StatelessWidget {
   final ValueChanged<String> onSelect;
   final VoidCallback onAdd;
   final VoidCallback onDelete;
+  final ValueChanged<int> onMove;
   final ValueChanged<String> onTitleChanged;
   final ValueChanged<String> onContentChanged;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final hasSelection = selectedMemoId != null && memos.any((memo) => memo.id == selectedMemoId);
+    final selectedIndex = memos.indexWhere((memo) => memo.id == selectedMemoId);
+    final hasSelection = selectedIndex != -1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -240,6 +250,18 @@ class _MemoSection extends StatelessWidget {
                   decoration: const InputDecoration(labelText: '제목', isDense: true),
                   onChanged: onTitleChanged,
                 ),
+              ),
+              IconButton(
+                onPressed: selectedIndex > 0 ? () => onMove(-1) : null,
+                icon: const Icon(Icons.chevron_left, size: 18),
+                tooltip: '왼쪽으로 이동',
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                onPressed: selectedIndex < memos.length - 1 ? () => onMove(1) : null,
+                icon: const Icon(Icons.chevron_right, size: 18),
+                tooltip: '오른쪽으로 이동',
+                visualDensity: VisualDensity.compact,
               ),
               IconButton(
                 onPressed: () async {
