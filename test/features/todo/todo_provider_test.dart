@@ -13,6 +13,9 @@ class _InMemoryKeyValueStore implements KeyValueStore {
 
   @override
   Future<void> setString(String key, String value) async => _data[key] = value;
+
+  @override
+  Future<void> remove(String key) async => _data.remove(key);
 }
 
 ProviderContainer _makeContainer() {
@@ -141,15 +144,50 @@ void main() {
   });
 
   group('todoMemoProvider', () {
-    test('starts as an empty string and update() persists the new value', () async {
+    test('starts empty and addMemo() appends a titled, blank memo', () async {
       final container = _makeContainer();
 
       final initial = await container.read(todoMemoProvider.future);
-      expect(initial, '');
+      expect(initial, isEmpty);
 
-      await container.read(todoMemoProvider.notifier).updateMemo('회의 메모');
+      final memo = await container.read(todoMemoProvider.notifier).addMemo();
 
-      expect(container.read(todoMemoProvider).value, '회의 메모');
+      final memos = container.read(todoMemoProvider).value!;
+      expect(memos, hasLength(1));
+      expect(memos.first.id, memo.id);
+      expect(memos.first.title, '새 메모');
+      expect(memos.first.content, '');
+    });
+
+    test('renameMemo() and updateContent() only change the targeted memo', () async {
+      final container = _makeContainer();
+      await container.read(todoMemoProvider.future);
+      final notifier = container.read(todoMemoProvider.notifier);
+      final first = await notifier.addMemo();
+      await notifier.addMemo();
+
+      await notifier.renameMemo(first.id, '회의록');
+      await notifier.updateContent(first.id, '오늘 논의 내용');
+
+      final memos = container.read(todoMemoProvider).value!;
+      final updated = memos.firstWhere((memo) => memo.id == first.id);
+      expect(updated.title, '회의록');
+      expect(updated.content, '오늘 논의 내용');
+      expect(memos.last.title, '새 메모');
+    });
+
+    test('removeMemo() deletes only the targeted memo', () async {
+      final container = _makeContainer();
+      await container.read(todoMemoProvider.future);
+      final notifier = container.read(todoMemoProvider.notifier);
+      final first = await notifier.addMemo();
+      await notifier.addMemo();
+
+      await notifier.removeMemo(first.id);
+
+      final memos = container.read(todoMemoProvider).value!;
+      expect(memos, hasLength(1));
+      expect(memos.first.title, '새 메모');
     });
   });
 }
