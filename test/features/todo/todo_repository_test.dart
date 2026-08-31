@@ -1,4 +1,4 @@
-import 'package:daily_snapshot/features/todo/data/key_value_store.dart';
+import 'package:daily_snapshot/core/data/key_value_store.dart';
 import 'package:daily_snapshot/features/todo/data/memo_item.dart';
 import 'package:daily_snapshot/features/todo/data/todo_item.dart';
 import 'package:daily_snapshot/features/todo/data/todo_repository.dart';

@@ -55,6 +55,35 @@ void main() {
     });
   });
 
+  group('KmaRegionDirectory.nearest', () {
+    final directory = KmaRegionDirectory.fromRegions(const [
+      CityCandidate(
+        name: '종로구',
+        latitude: 37.570,
+        longitude: 126.981,
+        admin1: '서울특별시',
+        country: '대한민국',
+      ),
+      CityCandidate(
+        name: '해운대구',
+        latitude: 35.163,
+        longitude: 129.163,
+        admin1: '부산광역시',
+        country: '대한민국',
+      ),
+    ]);
+
+    test('가장 가까운 지점을 반환한다', () {
+      final result = directory.nearest(37.571, 126.982);
+      expect(result?.name, '종로구');
+    });
+
+    test('한국에서 멀리 떨어진 좌표는 null을 반환한다(도쿄 좌표)', () {
+      final result = directory.nearest(35.6762, 139.6503);
+      expect(result, isNull);
+    });
+  });
+
   group('KmaRegionDirectory.load (bundled asset)', () {
     TestWidgetsFlutterBinding.ensureInitialized();
 

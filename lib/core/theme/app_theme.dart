@@ -74,6 +74,7 @@ class AppTheme {
   static ThemeData _themeFrom(ColorScheme colorScheme, AppAccentColors accentColors) {
     return ThemeData(
       useMaterial3: true,
+      fontFamily: 'Pretendard',
       colorScheme: colorScheme,
       scaffoldBackgroundColor: colorScheme.surfaceContainerLowest,
       appBarTheme: AppBarTheme(

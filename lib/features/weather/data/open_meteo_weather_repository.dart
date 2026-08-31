@@ -37,4 +37,10 @@ class OpenMeteoWeatherRepository implements WeatherRepository {
 
     return WeatherModel.fromJson(cityName: city.displayLabel, json: forecastJson);
   }
+
+  @override
+  Future<CityCandidate?> nearestCity(double latitude, double longitude) {
+    // 현재 미사용 리포지토리라 좌표 기반 지역 조회는 구현하지 않음.
+    throw UnimplementedError('OpenMeteoWeatherRepository는 좌표 기반 지역 조회를 지원하지 않습니다.');
+  }
 }

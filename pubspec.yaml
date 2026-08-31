@@ -1,7 +1,7 @@
 name: daily_snapshot
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.1.0+1
+version: 26.8.31+1
 
 environment:
   sdk: ^3.13.1
@@ -24,3 +24,9 @@ flutter:
   assets:
     - assets/kma_regions.json
     - assets/images/app_icon.png
+  fonts:
+    - family: Pretendard
+      fonts:
+        - asset: assets/fonts/Pretendard-Regular.otf
+        - asset: assets/fonts/Pretendard-SemiBold.otf
+          weight: 600

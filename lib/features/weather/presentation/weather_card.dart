@@ -10,6 +10,7 @@ import '../../../core/widgets/loading_error_view.dart';
 import '../application/weather_provider.dart';
 import '../data/city_candidate.dart';
 import '../data/weather_model.dart';
+import '../util/location_service.dart';
 
 class WeatherCard extends ConsumerStatefulWidget {
   const WeatherCard({super.key});
@@ -22,6 +23,7 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
   late final TextEditingController _controller;
   Timer? _debounce;
   String _query = '';
+  bool _locating = false;
 
   @override
   void initState() {
@@ -55,6 +57,32 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
     });
   }
 
+  Future<void> _useMyLocation() async {
+    setState(() => _locating = true);
+    try {
+      final position = await getCurrentPosition();
+      final city = await ref
+          .read(weatherRepositoryProvider)
+          .nearestCity(position.latitude, position.longitude);
+      if (!mounted) return;
+      if (city == null) {
+        _showMessage('한반도 인근 위치만 지원합니다.');
+      } else {
+        _selectCity(city);
+      }
+    } on LocationException catch (e) {
+      if (mounted) _showMessage(e.message);
+    } catch (_) {
+      if (mounted) _showMessage('위치 정보를 가져올 수 없습니다.');
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final selectedCity = ref.watch(selectedCityProvider);
@@ -69,10 +97,21 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
         children: [
           TextField(
             controller: _controller,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: '도시 이름',
               //hintText: '예: Seoul, Anyang, Paris',
-              prefixIcon: Icon(Icons.search),
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: IconButton(
+                onPressed: _locating ? null : _useMyLocation,
+                tooltip: '내 위치로 찾기',
+                icon: _locating
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.my_location),
+              ),
             ),
             onChanged: _onQueryChanged,
           ),

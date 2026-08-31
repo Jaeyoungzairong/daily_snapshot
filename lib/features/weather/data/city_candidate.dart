@@ -19,6 +19,16 @@ class CityCandidate {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'latitude': latitude,
+      'longitude': longitude,
+      if (admin1 != null) 'admin1': admin1,
+      if (country != null) 'country': country,
+    };
+  }
+
   final String name;
   final double latitude;
   final double longitude;

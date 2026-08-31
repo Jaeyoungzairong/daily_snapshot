@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/services.dart' show rootBundle;
 
@@ -62,4 +63,37 @@ class KmaRegionDirectory {
 
     return [...exact, ...startsWith, ...contains];
   }
+
+  // 기상청 지점 목록이 한국 안에만 있으므로, 최근접 지점과의 거리가 이보다 멀면
+  // 한국 밖 좌표(해외 등)로 보고 매칭하지 않는다.
+  static const double _maxNearestDistanceKm = 100;
+
+  /// 좌표에서 가장 가까운 지점을 찾는다. 최근접 지점도 [_maxNearestDistanceKm]보다 멀면 null.
+  CityCandidate? nearest(double latitude, double longitude) {
+    CityCandidate? closest;
+    var closestDistanceKm = double.infinity;
+
+    for (final region in _regions) {
+      final distanceKm = _distanceKm(latitude, longitude, region.latitude, region.longitude);
+      if (distanceKm < closestDistanceKm) {
+        closestDistanceKm = distanceKm;
+        closest = region;
+      }
+    }
+
+    if (closest == null || closestDistanceKm > _maxNearestDistanceKm) return null;
+    return closest;
+  }
+
+  static double _distanceKm(double lat1, double lon1, double lat2, double lon2) {
+    const earthRadiusKm = 6371.0;
+    final dLat = _degToRad(lat2 - lat1);
+    final dLon = _degToRad(lon2 - lon1);
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_degToRad(lat1)) * cos(_degToRad(lat2)) * sin(dLon / 2) * sin(dLon / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
+  static double _degToRad(double deg) => deg * (pi / 180);
 }

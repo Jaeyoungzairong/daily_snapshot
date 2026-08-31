@@ -25,6 +25,12 @@ class KmaWeatherRepository implements WeatherRepository {
   }
 
   @override
+  Future<CityCandidate?> nearestCity(double latitude, double longitude) async {
+    final directory = await KmaRegionDirectory.load();
+    return directory.nearest(latitude, longitude);
+  }
+
+  @override
   Future<WeatherModel> fetchWeather(CityCandidate city) async {
     final grid = KmaGrid.fromLatLon(latitude: city.latitude, longitude: city.longitude);
     final now = DateTime.now();

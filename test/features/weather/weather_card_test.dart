@@ -44,6 +44,9 @@ class _FakeWeatherRepository extends WeatherRepository {
 
   @override
   Future<List<CityCandidate>> searchCities(String query) async => [];
+
+  @override
+  Future<CityCandidate?> nearestCity(double latitude, double longitude) async => null;
 }
 
 void main() {

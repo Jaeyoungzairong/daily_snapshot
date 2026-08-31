@@ -119,6 +119,18 @@ class TodoMemoNotifier extends AsyncNotifier<List<MemoItem>> {
     await _persist(current.where((memo) => memo.id != id).toList());
   }
 
+  Future<void> moveMemo(String id, int delta) async {
+    final current = state.value ?? [];
+    final index = current.indexWhere((memo) => memo.id == id);
+    if (index == -1) return;
+    final newIndex = index + delta;
+    if (newIndex < 0 || newIndex >= current.length) return;
+    final updated = [...current];
+    final memo = updated.removeAt(index);
+    updated.insert(newIndex, memo);
+    await _persist(updated);
+  }
+
   Future<void> _persist(List<MemoItem> memos) async {
     state = AsyncData(memos);
     await _repository.saveMemos(memos);
