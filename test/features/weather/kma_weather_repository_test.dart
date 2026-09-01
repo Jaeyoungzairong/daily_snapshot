@@ -64,9 +64,35 @@ void main() {
       );
 
       expect(model.hourlyForecast[0].precipitationProbability, 70);
-      expect(model.hourlyForecast[0].precipitationAmount, '1.0mm');
+      expect(model.hourlyForecast[0].precipitationAmount, '1mm');
       expect(model.hourlyForecast[1].precipitationProbability, 0);
       expect(model.hourlyForecast[1].precipitationAmount, isNull);
+    });
+
+    test('simplifies "미만"/"이상" PCP text into inequality symbols', () {
+      final model = buildWeatherModel(
+        cityName: '테스트시',
+        now: DateTime(2026, 8, 28, 10, 1),
+        currentByCategory: {'T1H': '20.0', 'WSD': '1.0', 'PTY': '0'},
+        forecastItems: [
+          _item('20260828', '1000', 'TMP', '20'),
+          _item('20260828', '1000', 'SKY', '1'),
+          _item('20260828', '1000', 'PTY', '0'),
+          _item('20260828', '1000', 'PCP', '1mm 미만'),
+          _item('20260828', '1100', 'TMP', '21'),
+          _item('20260828', '1100', 'SKY', '1'),
+          _item('20260828', '1100', 'PTY', '0'),
+          _item('20260828', '1100', 'PCP', '50.0mm 이상'),
+          _item('20260828', '1200', 'TMP', '21'),
+          _item('20260828', '1200', 'SKY', '1'),
+          _item('20260828', '1200', 'PTY', '0'),
+          _item('20260828', '1200', 'PCP', '30.0~50.0mm'),
+        ],
+      );
+
+      expect(model.hourlyForecast[0].precipitationAmount, '<1mm');
+      expect(model.hourlyForecast[1].precipitationAmount, '>50mm');
+      expect(model.hourlyForecast[2].precipitationAmount, '30~50mm');
     });
   });
 
@@ -195,7 +221,7 @@ void main() {
           _item('20260828', '1000', 'PTY', '0'),
         ],
       );
-      expect(withRain.precipitationAmount, '1.0mm');
+      expect(withRain.precipitationAmount, '1mm');
 
       final noRain = buildWeatherModel(
         cityName: '테스트시',

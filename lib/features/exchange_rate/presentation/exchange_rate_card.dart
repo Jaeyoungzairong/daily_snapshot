@@ -164,7 +164,7 @@ class _SelectedRateHeader extends StatelessWidget {
             const Spacer(),
             Text(
               '${Formatters.amount(rate.krwValue)}원',
-              style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -261,7 +261,12 @@ class _RateHistoryChart extends ConsumerWidget {
               final values = points.map((p) => p.krwValue);
               final minValue = values.reduce((a, b) => a < b ? a : b);
               final maxValue = values.reduce((a, b) => a > b ? a : b);
-              final labelInterval = (points.length / 4).ceilToDouble().clamp(1.0, double.infinity);
+              // 정수로 올림한 간격을 쓰면 (points.length - 1)이 그 간격의 배수가 아닐 때
+              // 마지막 눈금이 끝까지 못 미쳐서 라벨들이 오른쪽으로 치우친 여백을 남긴 채
+              // 왼쪽에 몰려 보인다. 소수 간격을 그대로 써서 마지막 눈금이 항상 마지막
+              // 데이터 지점(points.length - 1)에 정확히 오도록 한다.
+              final labelInterval = ((points.length - 1) / 4).clamp(1.0, double.infinity);
+              final axisLabel = _axisLabelFormatterFor(selectedPeriod);
               // 그리드 간격을 "딱 떨어지는" 숫자(1/2/5 x 10^n)로 잡는다. range/4 같은 임의 값을 쓰면
               // 맨 위 그리드선이 maxY와 거의 같은 위치에 찍혀서, 실제 최댓값 라벨과 겹쳐 보였다.
               final gridInterval = _niceInterval(maxValue - minValue);
@@ -317,11 +322,11 @@ class _RateHistoryChart extends ConsumerWidget {
                           TextStyle(
                             color: theme.colorScheme.onInverseSurface,
                             fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                           children: [
                             TextSpan(
-                              text: Formatters.shortDate(point.date),
+                              text: Formatters.fullDate(point.date),
                               style: TextStyle(
                                 color: theme.colorScheme.onInverseSurface.withValues(alpha: 0.7),
                                 fontSize: 11,
@@ -361,7 +366,7 @@ class _RateHistoryChart extends ConsumerWidget {
                           return Padding(
                             padding: const EdgeInsets.only(top: 6),
                             child: Text(
-                              Formatters.shortDate(points[index].date),
+                              axisLabel(points[index].date),
                               style: theme.textTheme.labelSmall,
                             ),
                           );
@@ -389,6 +394,22 @@ class _RateHistoryChart extends ConsumerWidget {
         ),
       ],
     );
+  }
+}
+
+/// 차트 축 눈금은 기간과 무관하게 항상 4~5개뿐이라(points.length / 4), 기간이 길수록
+/// 눈금 하나가 담당하는 시간 폭도 넓어진다. 그 폭에 맞는 단위(일/월/년)로 라벨을 보여준다.
+String Function(DateTime) _axisLabelFormatterFor(ChartPeriod period) {
+  switch (period) {
+    case ChartPeriod.fourteenDays:
+    case ChartPeriod.oneMonth:
+      return Formatters.shortDate;
+    case ChartPeriod.sixMonths:
+    case ChartPeriod.oneYear:
+      return Formatters.monthLabel;
+    case ChartPeriod.fiveYears:
+    case ChartPeriod.tenYears:
+      return Formatters.yearLabel;
   }
 }
 
