@@ -35,5 +35,13 @@ class Formatters {
 
   static String shortDate(DateTime dateTime) => '${dateTime.month}/${dateTime.day}';
 
+  /// 월 단위 축 라벨(예: "26.2"). 연말/연초를 가로지르는 구간에서도 연도가 항상 드러나도록
+  /// 월 이름 대신 pubspec 버전과 같은 축약 연도(YY) 표기를 쓴다.
+  static String monthLabel(DateTime dateTime) => '${dateTime.year % 100}.${dateTime.month}';
+
+  static String yearLabel(DateTime dateTime) => '${dateTime.year}';
+
+  static String fullDate(DateTime dateTime) => '${dateTime.year}.${dateTime.month}.${dateTime.day}';
+
   static String hour24(DateTime dateTime) => '${dateTime.hour}시';
 }

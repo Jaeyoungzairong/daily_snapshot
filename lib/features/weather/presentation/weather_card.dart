@@ -143,7 +143,9 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
                     const SizedBox(width: 12),
                     Text(
                       Formatters.temperature(weather.currentTemp),
-                      style: Theme.of(context).textTheme.headlineMedium,
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                     ),
                     const SizedBox(width: 12),
                     Text(
@@ -275,7 +277,7 @@ class _HourlyForecastRow extends StatelessWidget {
                   label,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: hour.isNow ? theme.colorScheme.primary : null,
-                    fontWeight: hour.isNow ? FontWeight.bold : null,
+                    fontWeight: hour.isNow ? FontWeight.w600 : null,
                   ),
                 ),
                 const SizedBox(height: 6),

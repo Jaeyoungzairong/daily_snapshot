@@ -1,7 +1,7 @@
 name: daily_snapshot
 description: "A new Flutter project."
 publish_to: 'none'
-version: 26.8.31+1
+version: 26.9.1+1
 
 environment:
   sdk: ^3.13.1

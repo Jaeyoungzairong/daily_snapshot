@@ -238,10 +238,10 @@ String _keyFor(DateTime dt) =>
     '${dt.year.toString().padLeft(4, '0')}${dt.month.toString().padLeft(2, '0')}${dt.day.toString().padLeft(2, '0')}${dt.hour.toString().padLeft(2, '0')}00';
 
 /// 단기예보 PCP는 강수가 없을 때 "강수없음" 텍스트를 값으로 준다. UI에서는 이를
-/// 표시하지 않는 게 자연스러워 null로 정규화한다(그 외 값은 "1.0mm" 같은 원문 그대로 사용).
+/// 표시하지 않는 게 자연스러워 null로 정규화한다(그 외 값은 _simplifyPrecipitationText로 축약).
 String? _noPrecipitation(String? value) {
   if (value == null || value == '강수없음') return null;
-  return value;
+  return _simplifyPrecipitationText(value);
 }
 
 /// 초단기실황 RN1은 PCP와 달리 "강수없음" 텍스트가 아니라 단위 없는 순수 숫자(mm)로
@@ -249,5 +249,22 @@ String? _noPrecipitation(String? value) {
 String? _currentPrecipitationText(String? rn1) {
   final value = double.tryParse(rn1 ?? '');
   if (value == null || value == 0) return null;
-  return '${rn1}mm';
+  return _simplifyPrecipitationText('${rn1}mm');
+}
+
+/// 기상청 강수량 텍스트는 폭이 좁은 시간별 예보 칸에 표시하기엔 장황하다
+/// ("1.0mm", "1mm 미만", "30.0~50.0mm", "50.0mm 이상"). 불필요한 소수점(.0)을 지우고,
+/// "미만"/"이상"은 부등호로 축약한다. 구간값은 이미 물결표(~)를 쓰므로 부등호와 역할이
+/// 겹치지 않는다.
+String _simplifyPrecipitationText(String raw) {
+  var text = raw.replaceAll(RegExp(r'\.0(?=mm|~)'), '');
+  text = text.replaceFirstMapped(
+    RegExp(r'^(\d[\d.~]*mm) 미만$'),
+    (match) => '<${match[1]}',
+  );
+  text = text.replaceFirstMapped(
+    RegExp(r'^(\d[\d.~]*mm) 이상$'),
+    (match) => '>${match[1]}',
+  );
+  return text;
 }

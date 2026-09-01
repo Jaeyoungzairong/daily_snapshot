@@ -23,11 +23,9 @@ final citySearchProvider = FutureProvider.autoDispose.family<List<CityCandidate>
 });
 
 const CityCandidate _defaultCity = CityCandidate(
-  name: '안양시동안구',
-  latitude: 37.3897,
-  longitude: 126.953356,
-  admin1: '경기도',
-  country: '대한민국',
+  name: '서울특별시',
+  latitude: 37.563569,
+  longitude: 126.980008,
 );
 
 class SelectedCityNotifier extends Notifier<CityCandidate> {
