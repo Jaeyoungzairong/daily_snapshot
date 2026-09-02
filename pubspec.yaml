@@ -1,12 +1,15 @@
 name: daily_snapshot
 description: "A new Flutter project."
 publish_to: 'none'
-version: 26.9.1+1
+version: 26.9.2+1
 
 environment:
   sdk: ^3.13.1
 
 dependencies:
+  cloud_firestore: ^6.9.0
+  firebase_auth: ^6.6.1
+  firebase_core: ^4.14.0
   fl_chart: ^1.2.0
   flutter:
     sdk: flutter

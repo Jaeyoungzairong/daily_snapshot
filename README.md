@@ -24,9 +24,17 @@ Flutter Web 대시보드입니다. 백엔드 서버 없이 정적 사이트로 �
 ### 오늘 할일 / 메모
 - 체크리스트(완료 항목은 취소선 유지, 자동 초기화 없이 계속 누적), 항목 삭제와 완료 항목 일괄 삭제 시 확인 다이얼로그로 실수 방지
 - 메모는 제목을 붙여 여러 개를 만들어 관리(칩 형태 선택기), 좌우 버튼으로 순서 변경 가능, 삭제 시 확인 다이얼로그
-- `shared_preferences`(웹에서는 브라우저 `localStorage`)로 로컬 저장. 예전 단일 메모 데이터가 있으면
-  최초 1회 자동으로 다중 메모 구조로 이관
+- Firebase 이메일 링크(비밀번호 없는) 로그인 후에만 이용 가능. 관리자가 Firestore에 등록·활성화한
+  이메일만 로그인할 수 있고, 미승인 이메일은 로그인 링크 발송 자체를 하지 않음(발송 한도 절약,
+  "링크가 안 왔나?" 하는 혼란 방지)
+- 메일 링크를 클릭해 앱으로 돌아온 뒤에도 "로그인 계속하기"를 직접 눌러야 로그인이 완료됨 — 메일
+  보안 스캐너가 링크를 미리 열어봐도 1회용 로그인 코드가 그 자리에서 소모되지 않도록 하기 위함
+- 데이터는 Firestore에 저장되어 기기 간 동기화됨(같은 계정으로 로그인하면 어디서든 동일한 목록을 봄).
+  트랜잭션으로 갱신해 여러 기기에서 거의 동시에 수정해도 나중 쓰기가 앞선 변경을 덮어쓰지 않음
+  (낙관적 로컬 갱신 + 실시간 스트림 반영)
 - 항목별 생성/완료 시각을 함께 저장해 추후 날짜별 기록 조회 기능 확장을 고려한 데이터 구조
+- 도시 선택/테마처럼 기기 하나에만 있으면 되는 값은 그대로 로컬(`shared_preferences`)에 저장 — 로그인이
+  필요한 건 할일/메모뿐
 
 ### 바로가기
 - 자주 쓰는 외부 사이트(그룹웨어, 사내 NAS, 지도, 메일, 검색 등)를 아이콘 목록으로 두고 클릭 시 새 탭으로 이동
@@ -38,7 +46,11 @@ Flutter Web 대시보드입니다. 백엔드 서버 없이 정적 사이트로 �
 
 ## 기술 스택
 - Flutter Web (다른 플랫폼 타깃 없음)
-- 상태 관리: `flutter_riverpod` (`AsyncNotifier`/`Notifier` 기반)
+- 상태 관리: `flutter_riverpod` (`AsyncNotifier`/`StreamNotifier`/`Notifier` 기반)
+- 인증/데이터베이스: `firebase_auth`(이메일 링크 로그인) + `cloud_firestore`(할일/메모 동기화).
+  보안 규칙에서 로그인 승인 명단(`admin_allowed_emails`)을 함께 검증 — 단건 조회(`get`)는 누구나
+  가능하게 열어 로그인 전에도 승인 여부를 미리 확인할 수 있게 하고, 목록 조회(`list`)는 막아 전체
+  승인자 목록이 노출되지 않게 함
 - 로컬 저장소: `shared_preferences` (공통 `KeyValueStore` 추상화로 감싸 테스트에서 인메모리로 대체)
 - 차트: `fl_chart`
 - HTTP: `http`
@@ -47,11 +59,12 @@ Flutter Web 대시보드입니다. 백엔드 서버 없이 정적 사이트로 �
 ## 프로젝트 구조
 ```
 lib/
-  core/            테마, 위젯, 로컬 저장소(KeyValueStore)·HTTP 클라이언트(ApiClient)·설정(LocalConfig) 등 공통 요소
+  core/            테마, 위젯, 로컬 저장소(KeyValueStore)·HTTP 클라이언트(ApiClient)·설정(LocalConfig)·
+                   인증(AuthService, Firebase 이메일 링크 로그인) 등 공통 요소
   features/
     weather/       날씨 (기상청 API 연동, 지역 검색, 내 위치로 찾기)
     exchange_rate/ 환율 (실시간 시세 + 히스토리 차트)
-    todo/          오늘 할일 / 다중 메모
+    todo/          오늘 할일 / 다중 메모 (로그인 필요, Firestore 동기화)
     shortcuts/     바로가기 링크
     dashboard/     위 카드들을 배치하는 대시보드 페이지
 ```
@@ -79,8 +92,14 @@ flutter run -d chrome --dart-define-from-file=lib/core/config/secrets.json
 ```
 
 > `flutter run -d chrome`은 매 실행마다 임시 브라우저 프로필을 새로 띄우므로, 세션이 끝나면
-> `localStorage`(할일/메모 데이터)가 초기화됩니다. 데이터가 계속 유지되는 상태로 확인하려면
-> 아래처럼 빌드 후 고정 포트로 정적 서빙하는 방법을 씁니다.
+> `localStorage`(도시/테마 선택값, 로그인 세션)가 초기화됩니다. 데이터가 계속 유지되는 상태로
+> 확인하려면 아래처럼 빌드 후 고정 포트로 정적 서빙하는 방법을 씁니다.
+
+> 할일/메모는 Firebase 이메일 링크 로그인이 필요하고, 그중에서도 Firestore의
+> `admin_allowed_emails` 컬렉션에 등록·활성화(`isActive: true`)된 이메일만 로그인할 수
+> 있습니다. 로컬에서 이 기능까지 테스트하려면 별도 Firebase 프로젝트를 만들고
+> `lib/firebase_options.dart`를 그 프로젝트 설정으로 교체한 뒤, `firestore.rules`를 배포하고
+> 본인 이메일을 승인 명단에 추가해야 합니다.
 
 ```bash
 flutter build web --dart-define-from-file=lib/core/config/secrets.json

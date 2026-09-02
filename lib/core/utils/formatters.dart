@@ -44,4 +44,11 @@ class Formatters {
   static String fullDate(DateTime dateTime) => '${dateTime.year}.${dateTime.month}.${dateTime.day}';
 
   static String hour24(DateTime dateTime) => '${dateTime.hour}시';
+
+  /// 예: "25.9.2 14:30" — 연도가 몇 년이든 항상 연도(YY)를 포함한다.
+  static String dateTime(DateTime dateTime) {
+    final h = dateTime.hour.toString().padLeft(2, '0');
+    final min = dateTime.minute.toString().padLeft(2, '0');
+    return '${monthLabel(dateTime)}.${dateTime.day} $h:$min';
+  }
 }
