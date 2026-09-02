@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/auth/auth_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/page_reload.dart';
 import '../../../core/widgets/dashboard_card.dart';
 import '../../../core/widgets/loading_error_view.dart';
 import '../application/todo_provider.dart';
@@ -121,6 +123,21 @@ class _TodoCardState extends ConsumerState<TodoCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final authState = ref.watch(authUidProvider);
+
+    return DashboardCard(
+      title: '할 일',
+      icon: Icons.checklist,
+      accentColor: theme.extension<AppAccentColors>()?.todo,
+      child: authState.when(
+        loading: () => const LoadingView(),
+        error: (error, _) => ErrorView(message: error.toString(), onRetry: reloadPage),
+        data: (uid) => uid == null ? const _SignInPrompt() : _buildSignedInContent(theme),
+      ),
+    );
+  }
+
+  Widget _buildSignedInContent(ThemeData theme) {
     final itemsAsync = ref.watch(todoListProvider);
     final memosAsync = ref.watch(todoMemoProvider);
 
@@ -138,67 +155,97 @@ class _TodoCardState extends ConsumerState<TodoCard> {
       }
     });
 
-    return DashboardCard(
-      title: '할 일',
-      icon: Icons.checklist,
-      accentColor: theme.extension<AppAccentColors>()?.todo,
-      child: itemsAsync.when(
-        loading: () => const LoadingView(),
-        error: (error, _) => ErrorView(
-          message: error.toString(),
-          onRetry: () => ref.invalidate(todoListProvider),
-        ),
-        data: (items) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _newItemController,
-                    decoration: const InputDecoration(
-                      labelText: '할 일 추가',
-                      //hintText: '예: 3시 팀 미팅 자료 준비',
-                    ),
-                    onSubmitted: (_) => _addItem(),
+    return itemsAsync.when(
+      loading: () => const LoadingView(),
+      error: (error, _) => ErrorView(
+        message: error.toString(),
+        onRetry: reloadPage,
+      ),
+      data: (items) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _newItemController,
+                  decoration: const InputDecoration(
+                    labelText: '할 일 추가',
+                    //hintText: '예: 3시 팀 미팅 자료 준비',
                   ),
+                  onSubmitted: (_) => _addItem(),
                 ),
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  onPressed: _addItem,
-                  icon: const Icon(Icons.add),
-                  tooltip: '할 일 추가',
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _TodoList(items: items),
-            const SizedBox(height: 16),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
-            Text('메모', style: theme.textTheme.labelLarge),
-            const SizedBox(height: 8),
-            memosAsync.when(
-              loading: () => const LoadingView(),
-              error: (error, _) => ErrorView(
-                message: error.toString(),
-                onRetry: () => ref.invalidate(todoMemoProvider),
               ),
-              data: (memos) => _MemoSection(
-                memos: memos,
-                selectedMemoId: _selectedMemoId,
-                titleController: _memoTitleController,
-                contentController: _memoContentController,
-                onSelect: _selectMemo,
-                onAdd: _addMemo,
-                onDelete: _deleteSelectedMemo,
-                onMove: _moveSelectedMemo,
-                onTitleChanged: _onMemoTitleChanged,
-                onContentChanged: _onMemoContentChanged,
+              const SizedBox(width: 8),
+              IconButton.filledTonal(
+                onPressed: _addItem,
+                icon: const Icon(Icons.add),
+                tooltip: '할 일 추가',
               ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _TodoList(items: items),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          Text('메모', style: theme.textTheme.labelLarge),
+          const SizedBox(height: 8),
+          memosAsync.when(
+            loading: () => const LoadingView(),
+            error: (error, _) => ErrorView(
+              message: error.toString(),
+              onRetry: reloadPage,
             ),
-          ],
-        ),
+            data: (memos) => _MemoSection(
+              memos: memos,
+              selectedMemoId: _selectedMemoId,
+              titleController: _memoTitleController,
+              contentController: _memoContentController,
+              onSelect: _selectMemo,
+              onAdd: _addMemo,
+              onDelete: _deleteSelectedMemo,
+              onMove: _moveSelectedMemo,
+              onTitleChanged: _onMemoTitleChanged,
+              onContentChanged: _onMemoContentChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SignInPrompt extends ConsumerWidget {
+  const _SignInPrompt();
+
+  Future<void> _signIn(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(authServiceProvider).signInWithGoogle();
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('로그인이 취소되었거나 실패했습니다.')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Column(
+        children: [
+          Text(
+            '할 일/메모는 구글 로그인 후 이용할 수 있습니다.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 12),
+          FilledButton.tonal(
+            onPressed: () => _signIn(context, ref),
+            child: const Text('구글로 로그인'),
+          ),
+        ],
       ),
     );
   }

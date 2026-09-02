@@ -1,30 +1,39 @@
 import 'package:daily_snapshot/features/todo/application/todo_provider.dart';
-import 'package:daily_snapshot/core/data/key_value_store.dart';
+import 'package:daily_snapshot/features/todo/data/cloud_list_store.dart';
 import 'package:daily_snapshot/features/todo/data/todo_item.dart';
 import 'package:daily_snapshot/features/todo/data/todo_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _InMemoryKeyValueStore implements KeyValueStore {
-  final Map<String, String> _data = {};
+class _InMemoryCloudListStore implements CloudListStore {
+  final Map<String, List<Map<String, dynamic>>> _docs = {};
 
   @override
-  Future<String?> getString(String key) async => _data[key];
+  Stream<List<Map<String, dynamic>>> watch(String docKey) async* {
+    yield _docs[docKey] ?? [];
+  }
 
   @override
-  Future<void> setString(String key, String value) async => _data[key] = value;
-
-  @override
-  Future<void> remove(String key) async => _data.remove(key);
+  Future<void> mutate(
+    String docKey,
+    List<Map<String, dynamic>> Function(List<Map<String, dynamic>> current) transform,
+  ) async {
+    _docs[docKey] = transform(_docs[docKey] ?? []);
+  }
 }
 
 ProviderContainer _makeContainer() {
   final container = ProviderContainer(
     overrides: [
-      todoRepositoryProvider.overrideWithValue(TodoRepository(store: _InMemoryKeyValueStore())),
+      todoRepositoryProvider.overrideWithValue(TodoRepository(store: _InMemoryCloudListStore())),
     ],
   );
   addTearDown(container.dispose);
+  // StreamNotifierProvider는 container.read(provider.future)만으로는 스트림을 구독하지
+  // 않는다(위젯의 ref.watch처럼 실제로 "듣는" 대상이 있어야 구독이 시작된다) — 그래서 여기서
+  // 미리 listen()을 걸어 구독을 켜 둔다. 안 그러면 .future가 영원히 로딩 상태로 멈춘다.
+  container.listen(todoListProvider, (_, _) {});
+  container.listen(todoMemoProvider, (_, _) {});
   return container;
 }
 
@@ -102,12 +111,13 @@ void main() {
     });
 
     test('changes persist across a fresh provider read via the same repository', () async {
-      final store = _InMemoryKeyValueStore();
+      final store = _InMemoryCloudListStore();
       final repository = TodoRepository(store: store);
 
       final container1 = ProviderContainer(
         overrides: [todoRepositoryProvider.overrideWithValue(repository)],
       );
+      container1.listen(todoListProvider, (_, _) {});
       await container1.read(todoListProvider.future);
       await container1.read(todoListProvider.notifier).add('저장 확인용');
       container1.dispose();
@@ -116,6 +126,7 @@ void main() {
         overrides: [todoRepositoryProvider.overrideWithValue(repository)],
       );
       addTearDown(container2.dispose);
+      container2.listen(todoListProvider, (_, _) {});
       final reloaded = await container2.read(todoListProvider.future);
 
       expect(reloaded, hasLength(1));

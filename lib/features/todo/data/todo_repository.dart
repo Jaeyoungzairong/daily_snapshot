@@ -1,60 +1,77 @@
-import 'dart:convert';
-
-import '../../../core/data/key_value_store.dart';
+import 'cloud_list_store.dart';
 import 'memo_item.dart';
 import 'todo_item.dart';
 
-/// 할 일 목록/메모를 로컬에 저장·조회한다. 백엔드가 없는 정적 웹 배포라
-/// 브라우저 로컬 저장소(SharedPreferencesAsync, 웹에서는 localStorage)가 유일한 저장 수단이다.
+/// 할 일/메모를 Firestore에 저장·조회한다(기기 간 동기화를 위해 [CloudListStore]를 씀).
+/// 도시 선택/다크모드처럼 이 기기에만 있으면 되는 값은 여전히 로컬 저장소를 쓰고,
+/// 할 일/메모만 이 리포지토리를 거친다.
 class TodoRepository {
-  TodoRepository({KeyValueStore? store}) : _store = store ?? SharedPreferencesKeyValueStore();
+  // ignore: prefer_initializing_formals
+  TodoRepository({required CloudListStore store}) : _store = store;
 
-  final KeyValueStore _store;
+  final CloudListStore _store;
 
-  static const String _itemsKey = 'todo_items';
-  static const String _memosKey = 'todo_memos';
-  // 메모를 여러 개 둘 수 있도록 바뀌기 전, 문자열 하나로 저장하던 옛 키.
-  // 새 키가 아직 없을 때 딱 한 번만 이 값을 읽어 리스트의 첫 항목으로 이관한다.
-  static const String _legacyMemoKey = 'todo_memo';
+  static const String _itemsDoc = 'todo_items';
+  static const String _memosDoc = 'todo_memos';
 
-  Future<List<TodoItem>> loadItems() async {
-    final raw = await _store.getString(_itemsKey);
-    if (raw == null || raw.isEmpty) return [];
-    final decoded = jsonDecode(raw) as List;
-    return decoded.map((e) => TodoItem.fromJson(e as Map<String, dynamic>)).toList();
+  Stream<List<TodoItem>> watchItems() {
+    return _store.watch(_itemsDoc).map((raw) => raw.map(TodoItem.fromJson).toList());
   }
 
-  Future<void> saveItems(List<TodoItem> items) {
-    final encoded = jsonEncode(items.map((e) => e.toJson()).toList());
-    return _store.setString(_itemsKey, encoded);
+  Future<void> addItem(TodoItem item) => _mutateItems((items) => [...items, item]);
+
+  Future<void> toggleItem(String id) => _mutateItems((items) => [
+        for (final item in items)
+          if (item.id == id)
+            item.copyWith(done: !item.done, completedAt: item.done ? null : DateTime.now())
+          else
+            item,
+      ]);
+
+  Future<void> removeItem(String id) => _mutateItems((items) => items.where((item) => item.id != id).toList());
+
+  Future<void> clearCompletedItems() => _mutateItems((items) => items.where((item) => !item.done).toList());
+
+  Future<void> _mutateItems(List<TodoItem> Function(List<TodoItem> current) transform) {
+    return _store.mutate(
+      _itemsDoc,
+      (raw) => transform(raw.map(TodoItem.fromJson).toList()).map((e) => e.toJson()).toList(),
+    );
   }
 
-  Future<List<MemoItem>> loadMemos() async {
-    final raw = await _store.getString(_memosKey);
-    if (raw != null) {
-      final decoded = jsonDecode(raw) as List;
-      return decoded.map((e) => MemoItem.fromJson(e as Map<String, dynamic>)).toList();
-    }
-
-    final legacy = await _store.getString(_legacyMemoKey);
-    final migrated = (legacy == null || legacy.isEmpty)
-        ? <MemoItem>[]
-        : [
-            MemoItem(
-              id: DateTime.now().microsecondsSinceEpoch.toString(),
-              title: '메모',
-              content: legacy,
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-            ),
-          ];
-    await saveMemos(migrated);
-    if (legacy != null) await _store.remove(_legacyMemoKey);
-    return migrated;
+  Stream<List<MemoItem>> watchMemos() {
+    return _store.watch(_memosDoc).map((raw) => raw.map(MemoItem.fromJson).toList());
   }
 
-  Future<void> saveMemos(List<MemoItem> memos) {
-    final encoded = jsonEncode(memos.map((e) => e.toJson()).toList());
-    return _store.setString(_memosKey, encoded);
+  Future<void> addMemo(MemoItem memo) => _mutateMemos((memos) => [...memos, memo]);
+
+  Future<void> renameMemo(String id, String title) => _mutateMemos((memos) => [
+        for (final memo in memos)
+          if (memo.id == id) memo.copyWith(title: title, updatedAt: DateTime.now()) else memo,
+      ]);
+
+  Future<void> updateMemoContent(String id, String content) => _mutateMemos((memos) => [
+        for (final memo in memos)
+          if (memo.id == id) memo.copyWith(content: content, updatedAt: DateTime.now()) else memo,
+      ]);
+
+  Future<void> removeMemo(String id) => _mutateMemos((memos) => memos.where((memo) => memo.id != id).toList());
+
+  Future<void> moveMemo(String id, int delta) => _mutateMemos((memos) {
+        final index = memos.indexWhere((memo) => memo.id == id);
+        if (index == -1) return memos;
+        final newIndex = index + delta;
+        if (newIndex < 0 || newIndex >= memos.length) return memos;
+        final updated = [...memos];
+        final memo = updated.removeAt(index);
+        updated.insert(newIndex, memo);
+        return updated;
+      });
+
+  Future<void> _mutateMemos(List<MemoItem> Function(List<MemoItem> current) transform) {
+    return _store.mutate(
+      _memosDoc,
+      (raw) => transform(raw.map(MemoItem.fromJson).toList()).map((e) => e.toJson()).toList(),
+    );
   }
 }

@@ -1,12 +1,22 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/auth/auth_provider.dart';
+import '../data/cloud_list_store.dart';
 import '../data/memo_item.dart';
 import '../data/todo_item.dart';
 import '../data/todo_repository.dart';
 
-final todoRepositoryProvider = Provider<TodoRepository>((ref) => TodoRepository());
+/// 로그인(uid)이 있을 때만 만들어진다 — TodoCard가 로그인 안 됐을 때는 이 provider를
+/// 아예 보지 않으므로, 여기서 uid가 없어 던지는 예외는 실제로는 발생하지 않는 방어 코드다.
+final todoRepositoryProvider = Provider<TodoRepository>((ref) {
+  final uid = ref.watch(authUidProvider).value;
+  if (uid == null) {
+    throw StateError('로그인 후에만 사용할 수 있습니다.');
+  }
+  return TodoRepository(store: FirestoreListStore(uid: uid));
+});
 
-class TodoListNotifier extends AsyncNotifier<List<TodoItem>> {
+class TodoListNotifier extends StreamNotifier<List<TodoItem>> {
   late final TodoRepository _repository;
 
   // 타임스탬프만으로는 같은 마이크로초에 연달아 추가될 경우 id가 겹칠 수 있어
@@ -14,9 +24,9 @@ class TodoListNotifier extends AsyncNotifier<List<TodoItem>> {
   int _idSequence = 0;
 
   @override
-  Future<List<TodoItem>> build() async {
+  Stream<List<TodoItem>> build() {
     _repository = ref.watch(todoRepositoryProvider);
-    return _repository.loadItems();
+    return _repository.watchItems();
   }
 
   Future<void> add(String text) async {
@@ -29,38 +39,37 @@ class TodoListNotifier extends AsyncNotifier<List<TodoItem>> {
       done: false,
       createdAt: DateTime.now(),
     );
-    await _persist([...current, item]);
+    // 낙관적으로 먼저 반영 — 실제 확정 값은 뒤이어 Firestore 실시간 스트림으로 들어온다.
+    state = AsyncData([...current, item]);
+    await _repository.addItem(item);
   }
 
   Future<void> toggle(String id) async {
     final current = state.value ?? [];
-    final updated = [
+    state = AsyncData([
       for (final item in current)
         if (item.id == id)
           item.copyWith(done: !item.done, completedAt: item.done ? null : DateTime.now())
         else
           item,
-    ];
-    await _persist(updated);
+    ]);
+    await _repository.toggleItem(id);
   }
 
   Future<void> remove(String id) async {
     final current = state.value ?? [];
-    await _persist(current.where((item) => item.id != id).toList());
+    state = AsyncData(current.where((item) => item.id != id).toList());
+    await _repository.removeItem(id);
   }
 
   Future<void> clearCompleted() async {
     final current = state.value ?? [];
-    await _persist(current.where((item) => !item.done).toList());
-  }
-
-  Future<void> _persist(List<TodoItem> items) async {
-    state = AsyncData(items);
-    await _repository.saveItems(items);
+    state = AsyncData(current.where((item) => !item.done).toList());
+    await _repository.clearCompletedItems();
   }
 }
 
-final todoListProvider = AsyncNotifierProvider<TodoListNotifier, List<TodoItem>>(TodoListNotifier.new);
+final todoListProvider = StreamNotifierProvider<TodoListNotifier, List<TodoItem>>(TodoListNotifier.new);
 
 /// 미완료 항목을 앞에, 완료 항목(취소선 표시)을 뒤에 두는 화면 표시용 정렬.
 /// 저장 순서(입력한 순서)는 그대로 유지해 이후 이력 조회에 영향을 주지 않는다.
@@ -70,16 +79,16 @@ List<TodoItem> sortedForDisplay(List<TodoItem> items) {
   return [...pending, ...done];
 }
 
-class TodoMemoNotifier extends AsyncNotifier<List<MemoItem>> {
+class TodoMemoNotifier extends StreamNotifier<List<MemoItem>> {
   late final TodoRepository _repository;
 
   // TodoListNotifier와 같은 이유로 타임스탬프에 인스턴스 카운터를 더해 id 충돌을 막는다.
   int _idSequence = 0;
 
   @override
-  Future<List<MemoItem>> build() async {
+  Stream<List<MemoItem>> build() {
     _repository = ref.watch(todoRepositoryProvider);
-    return _repository.loadMemos();
+    return _repository.watchMemos();
   }
 
   Future<MemoItem> addMemo() async {
@@ -92,31 +101,33 @@ class TodoMemoNotifier extends AsyncNotifier<List<MemoItem>> {
       createdAt: now,
       updatedAt: now,
     );
-    await _persist([...current, memo]);
+    state = AsyncData([...current, memo]);
+    await _repository.addMemo(memo);
     return memo;
   }
 
   Future<void> renameMemo(String id, String title) async {
     final current = state.value ?? [];
-    final updated = [
+    state = AsyncData([
       for (final memo in current)
         if (memo.id == id) memo.copyWith(title: title, updatedAt: DateTime.now()) else memo,
-    ];
-    await _persist(updated);
+    ]);
+    await _repository.renameMemo(id, title);
   }
 
   Future<void> updateContent(String id, String content) async {
     final current = state.value ?? [];
-    final updated = [
+    state = AsyncData([
       for (final memo in current)
         if (memo.id == id) memo.copyWith(content: content, updatedAt: DateTime.now()) else memo,
-    ];
-    await _persist(updated);
+    ]);
+    await _repository.updateMemoContent(id, content);
   }
 
   Future<void> removeMemo(String id) async {
     final current = state.value ?? [];
-    await _persist(current.where((memo) => memo.id != id).toList());
+    state = AsyncData(current.where((memo) => memo.id != id).toList());
+    await _repository.removeMemo(id);
   }
 
   Future<void> moveMemo(String id, int delta) async {
@@ -128,13 +139,9 @@ class TodoMemoNotifier extends AsyncNotifier<List<MemoItem>> {
     final updated = [...current];
     final memo = updated.removeAt(index);
     updated.insert(newIndex, memo);
-    await _persist(updated);
-  }
-
-  Future<void> _persist(List<MemoItem> memos) async {
-    state = AsyncData(memos);
-    await _repository.saveMemos(memos);
+    state = AsyncData(updated);
+    await _repository.moveMemo(id, delta);
   }
 }
 
-final todoMemoProvider = AsyncNotifierProvider<TodoMemoNotifier, List<MemoItem>>(TodoMemoNotifier.new);
+final todoMemoProvider = StreamNotifierProvider<TodoMemoNotifier, List<MemoItem>>(TodoMemoNotifier.new);
