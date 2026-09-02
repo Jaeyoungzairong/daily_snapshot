@@ -1,19 +1,27 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_provider.dart';
+import '../../../core/auth/auth_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/page_reload.dart';
+import '../../../core/utils/web_url.dart';
 import '../../../core/widgets/dashboard_card.dart';
 import '../../../core/widgets/loading_error_view.dart';
 import '../application/todo_provider.dart';
 import '../data/memo_item.dart';
 import '../data/todo_item.dart';
 
-/// 삭제 전 실수 방지용 확인 다이얼로그. 사용자가 "삭제"를 눌렀을 때만 true를 반환한다.
-Future<bool> _confirmDelete(BuildContext context, {required String title, required String message}) async {
+/// 실수 방지용 확인 다이얼로그. 사용자가 [confirmLabel] 버튼을 눌렀을 때만 true를 반환한다.
+Future<bool> _confirmAction(
+  BuildContext context, {
+  required String title,
+  required String message,
+  String confirmLabel = '삭제',
+}) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -21,7 +29,7 @@ Future<bool> _confirmDelete(BuildContext context, {required String title, requir
       content: Text(message),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('삭제')),
+        TextButton(onPressed: () => Navigator.pop(context, true), child: Text(confirmLabel)),
       ],
     ),
   );
@@ -43,6 +51,7 @@ class _TodoCardState extends ConsumerState<TodoCard> {
   Timer? _memoContentDebounce;
   bool _memoInitialized = false;
   String? _selectedMemoId;
+  bool _signingOut = false;
 
   @override
   void dispose() {
@@ -120,15 +129,78 @@ class _TodoCardState extends ConsumerState<TodoCard> {
     });
   }
 
+  Future<void> _signOut() async {
+    if (_signingOut) return;
+    final confirmed = await _confirmAction(
+      context,
+      title: '로그아웃',
+      message: '로그아웃하시겠습니까?',
+      confirmLabel: '로그아웃',
+    );
+    if (!confirmed || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _signingOut = true);
+
+    // 저장 타이머가 아직 안 돌았다면(로그아웃 직전에 입력한 경우), 로그인 상태가
+    // 사라지기 전에 지금 즉시 저장해서 마지막 편집 내용이 유실되지 않게 한다.
+    final id = _selectedMemoId;
+    if (id != null) {
+      if (_memoTitleDebounce?.isActive ?? false) {
+        _memoTitleDebounce!.cancel();
+        try {
+          await ref.read(todoMemoProvider.notifier).renameMemo(id, _memoTitleController.text);
+        } catch (_) {
+          // 최선을 다한 저장 시도일 뿐이라, 실패해도 로그아웃은 계속 진행한다.
+        }
+      }
+      if (_memoContentDebounce?.isActive ?? false) {
+        _memoContentDebounce!.cancel();
+        try {
+          await ref.read(todoMemoProvider.notifier).updateContent(id, _memoContentController.text);
+        } catch (_) {}
+      }
+    }
+
+    if (!mounted) return;
+    try {
+      await ref.read(authServiceProvider).signOut();
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('로그아웃에 실패했습니다. 다시 시도해주세요.')));
+    }
+
+    if (mounted) setState(() => _signingOut = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final authState = ref.watch(authUidProvider);
 
+    // 로그아웃(uid가 null이 됨)하면 이전 세션의 메모 선택 상태가 다음 로그인 때
+    // 잘못 남아있지 않도록 초기화한다.
+    ref.listen(authUidProvider, (previous, next) {
+      if (next.value == null) {
+        _selectedMemoId = null;
+        _memoInitialized = false;
+        _newItemController.clear();
+        _memoTitleController.clear();
+        _memoContentController.clear();
+      }
+    });
+
     return DashboardCard(
       title: '할 일',
       icon: Icons.checklist,
       accentColor: theme.extension<AppAccentColors>()?.todo,
+      trailing: authState.value == null
+          ? null
+          : IconButton(
+              onPressed: _signingOut ? null : _signOut,
+              icon: const Icon(Icons.logout, size: 20),
+              tooltip: '로그아웃',
+              visualDensity: VisualDensity.compact,
+            ),
       child: authState.when(
         loading: () => const LoadingView(),
         error: (error, _) => ErrorView(message: error.toString(), onRetry: reloadPage),
@@ -158,7 +230,7 @@ class _TodoCardState extends ConsumerState<TodoCard> {
     return itemsAsync.when(
       loading: () => const LoadingView(),
       error: (error, _) => ErrorView(
-        message: error.toString(),
+        message: _describeDataError(error),
         onRetry: reloadPage,
       ),
       data: (items) => Column(
@@ -194,7 +266,7 @@ class _TodoCardState extends ConsumerState<TodoCard> {
           memosAsync.when(
             loading: () => const LoadingView(),
             error: (error, _) => ErrorView(
-              message: error.toString(),
+              message: _describeDataError(error),
               onRetry: reloadPage,
             ),
             data: (memos) => _MemoSection(
@@ -216,34 +288,215 @@ class _TodoCardState extends ConsumerState<TodoCard> {
   }
 }
 
-class _SignInPrompt extends ConsumerWidget {
+/// 로그인 링크 처리 중 발생한 예외를 사용자에게 보여줄 한국어 메시지로 바꾼다.
+String _describeAuthError(Object error) {
+  if (error is NotApprovedException) {
+    return '관리자 승인이 필요한 이메일입니다. 관리자에게 계정 추가를 요청해주세요.';
+  }
+  if (error is PendingEmailNotFoundException) {
+    return '로그인을 요청했던 기기(브라우저)에서 다시 열어주세요.';
+  }
+  return '로그인 처리 중 문제가 발생했습니다: $error';
+}
+
+/// 할일/메모 Firestore 스트림에서 발생한 에러를 사용자에게 보여줄 한국어 메시지로 바꾼다.
+String _describeDataError(Object error) {
+  if (error is FirebaseException) {
+    switch (error.code) {
+      case 'permission-denied':
+        return '승인이 해제되었습니다. 관리자에게 문의해주세요.';
+      case 'unavailable':
+        return '네트워크 연결을 확인해주세요.';
+    }
+  }
+  return '일시적인 오류가 발생했습니다. 다시 시도해주세요.';
+}
+
+class _SignInPrompt extends ConsumerStatefulWidget {
   const _SignInPrompt();
 
-  Future<void> _signIn(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
+  @override
+  ConsumerState<_SignInPrompt> createState() => _SignInPromptState();
+}
+
+class _SignInPromptState extends ConsumerState<_SignInPrompt> {
+  final TextEditingController _emailController = TextEditingController();
+  bool _sending = false;
+  bool _linkSent = false;
+  String? _errorMessage;
+
+  // 이메일 링크로 돌아온 경우를 위한 상태. isSignInWithEmailLink()/저장된 이메일 조회는
+  // 로컬 확인일 뿐 Firebase 서버 호출이 아니므로 자동으로 미리 보여줘도 안전하다.
+  // 실제 로그인(signInWithEmailLink, 서버 호출)은 사용자가 "로그인 계속하기"를 직접
+  // 눌러야만 실행된다 — 그래야 메일 보안 스캐너가 링크를 미리 열어봐도 1회용 로그인
+  // 코드가 그 자리에서 소모되지 않는다.
+  bool _checkingLink = true;
+  bool _isLinkMode = false;
+  bool _confirming = false;
+  String? _pendingEmail;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkForSignInLink();
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkForSignInLink() async {
+    final authService = ref.read(authServiceProvider);
+    final link = Uri.base.toString();
+    if (!authService.isSignInLink(link)) {
+      setState(() => _checkingLink = false);
+      return;
+    }
+    final email = await authService.peekPendingEmail();
+    if (!mounted) return;
+    setState(() {
+      _checkingLink = false;
+      _isLinkMode = true;
+      _pendingEmail = email;
+      if (email == null) {
+        _errorMessage = _describeAuthError(const PendingEmailNotFoundException());
+      }
+    });
+  }
+
+  Future<void> _confirmSignIn() async {
+    if (_confirming) return;
+    setState(() {
+      _confirming = true;
+      _errorMessage = null;
+    });
     try {
-      await ref.read(authServiceProvider).signInWithGoogle();
+      await ref.read(authServiceProvider).completeSignInIfLink(Uri.base.toString());
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLinkMode = false;
+        _errorMessage = _describeAuthError(error);
+      });
+    } finally {
+      clearSignInLinkFromUrl();
+      if (mounted) setState(() => _confirming = false);
+    }
+  }
+
+  Future<void> _sendLink() async {
+    final email = _emailController.text.trim().toLowerCase();
+    if (email.isEmpty || _sending) return;
+    setState(() {
+      _sending = true;
+      _errorMessage = null;
+    });
+    try {
+      await ref.read(authServiceProvider).sendSignInLink(email);
+      if (!mounted) return;
+      setState(() => _linkSent = true);
+    } on NotApprovedException catch (error) {
+      if (!mounted) return;
+      setState(() => _errorMessage = _describeAuthError(error));
     } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('로그인이 취소되었거나 실패했습니다.')));
+      if (!mounted) return;
+      setState(() => _errorMessage = '로그인 링크 발송에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      if (mounted) setState(() => _sending = false);
     }
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    if (_checkingLink) {
+      return const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: LoadingView());
+    }
+
+    if (_isLinkMode) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          children: [
+            Text(
+              _pendingEmail != null ? '$_pendingEmail 계정으로 로그인하시겠습니까?' : '로그인 링크가 확인되었습니다.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+              ),
+            ],
+            if (_pendingEmail != null) ...[
+              const SizedBox(height: 12),
+              FilledButton.tonal(
+                onPressed: _confirming ? null : _confirmSignIn,
+                child: _confirming
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('로그인 계속하기'),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    if (_linkSent) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Text(
+          '입력하신 이메일로 로그인 링크를 보냈습니다.\n메일함에서 링크를 확인해주세요.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium,
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Column(
         children: [
           Text(
-            '할 일/메모는 구글 로그인 후 이용할 수 있습니다.',
+            '할 일/메모는 승인된 이메일로 로그인 후 이용할 수 있습니다.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 12),
+          TextField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(labelText: '이메일'),
+            onSubmitted: (_) => _sendLink(),
+          ),
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage!,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 12),
           FilledButton.tonal(
-            onPressed: () => _signIn(context, ref),
-            child: const Text('구글로 로그인'),
+            onPressed: _sending ? null : _sendLink,
+            child: _sending
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('로그인 링크 받기'),
           ),
         ],
       ),
@@ -312,7 +565,7 @@ class _MemoSection extends StatelessWidget {
               ),
               IconButton(
                 onPressed: () async {
-                  final confirmed = await _confirmDelete(
+                  final confirmed = await _confirmAction(
                     context,
                     title: '메모 삭제',
                     message: '이 메모를 삭제할까요? 삭제한 내용은 복구할 수 없습니다.',
@@ -435,7 +688,7 @@ class _TodoList extends ConsumerWidget {
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: () async {
-                final confirmed = await _confirmDelete(
+                final confirmed = await _confirmAction(
                   context,
                   title: '완료 항목 지우기',
                   message: '완료된 항목을 모두 지울까요?',
@@ -475,7 +728,7 @@ class _TodoRow extends StatelessWidget {
         ),
         IconButton(
           onPressed: () async {
-            final confirmed = await _confirmDelete(
+            final confirmed = await _confirmAction(
               context,
               title: '할 일 삭제',
               message: '"${item.text}" 항목을 삭제할까요?',

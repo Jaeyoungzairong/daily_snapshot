@@ -133,4 +133,26 @@ void main() {
     expect(find.text('메모가 없습니다. + 버튼을 눌러 추가해보세요.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('TodoCard asks for confirmation before signing out, and cancel keeps the session', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _signedInOverrides(),
+        child: const MaterialApp(home: Scaffold(body: SingleChildScrollView(child: TodoCard()))),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('로그아웃'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('로그아웃하시겠습니까?'), findsOneWidget);
+    await tester.tap(find.text('취소'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('오늘 할 일을 추가해보세요.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
