@@ -65,12 +65,16 @@ class AuthService {
 
   /// [link]가 로그인 링크라면 로그인을 완료하고 승인 여부까지 확인한다. 로그인 링크가
   /// 아니면 아무 일도 하지 않는다.
-  Future<void> completeSignInIfLink(String link) async {
+  ///
+  /// 이 브라우저에 저장된 이메일이 없으면(다른 기기에서 링크를 열었거나, 발송 한도를
+  /// 우회하려고 관리자가 직접 생성한 링크를 열었을 때) [emailOverride]를 대신 사용한다.
+  Future<void> completeSignInIfLink(String link, {String? emailOverride}) async {
     if (!isSignInLink(link)) return;
 
-    final email = await _store.getString(_pendingEmailKey);
+    final stored = await _store.getString(_pendingEmailKey);
     await _store.remove(_pendingEmailKey);
-    if (email == null) {
+    final email = stored ?? emailOverride?.trim().toLowerCase();
+    if (email == null || email.isEmpty) {
       throw const PendingEmailNotFoundException();
     }
 

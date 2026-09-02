@@ -161,7 +161,7 @@ void main() {
       final initial = await container.read(todoMemoProvider.future);
       expect(initial, isEmpty);
 
-      final memo = await container.read(todoMemoProvider.notifier).addMemo();
+      final memo = (await container.read(todoMemoProvider.notifier).addMemo())!;
 
       final memos = container.read(todoMemoProvider).value!;
       expect(memos, hasLength(1));
@@ -174,7 +174,7 @@ void main() {
       final container = _makeContainer();
       await container.read(todoMemoProvider.future);
       final notifier = container.read(todoMemoProvider.notifier);
-      final first = await notifier.addMemo();
+      final first = (await notifier.addMemo())!;
       await notifier.addMemo();
 
       await notifier.renameMemo(first.id, '회의록');
@@ -191,7 +191,7 @@ void main() {
       final container = _makeContainer();
       await container.read(todoMemoProvider.future);
       final notifier = container.read(todoMemoProvider.notifier);
-      final first = await notifier.addMemo();
+      final first = (await notifier.addMemo())!;
       await notifier.addMemo();
 
       await notifier.removeMemo(first.id);

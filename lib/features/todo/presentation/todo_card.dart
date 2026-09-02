@@ -1,12 +1,13 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/auth/auth_service.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/utils/page_reload.dart';
 import '../../../core/utils/web_url.dart';
 import '../../../core/widgets/dashboard_card.dart';
@@ -63,11 +64,18 @@ class _TodoCardState extends ConsumerState<TodoCard> {
     super.dispose();
   }
 
-  void _addItem() {
+  Future<void> _addItem() async {
     final text = _newItemController.text;
     if (text.trim().isEmpty) return;
-    ref.read(todoListProvider.notifier).add(text);
-    _newItemController.clear();
+    final added = await ref.read(todoListProvider.notifier).add(text);
+    if (!mounted) return;
+    if (added) {
+      _newItemController.clear();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('할 일은 최대 $maxTodoItems개까지 추가할 수 있습니다. 완료된 항목을 정리해주세요.')),
+      );
+    }
   }
 
   void _selectMemo(String id) {
@@ -86,7 +94,14 @@ class _TodoCardState extends ConsumerState<TodoCard> {
 
   Future<void> _addMemo() async {
     final memo = await ref.read(todoMemoProvider.notifier).addMemo();
-    _selectMemo(memo.id);
+    if (!mounted) return;
+    if (memo != null) {
+      _selectMemo(memo.id);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('메모는 최대 $maxMemoCount개까지 만들 수 있습니다.')),
+      );
+    }
   }
 
   Future<void> _moveSelectedMemo(int delta) async {
@@ -296,6 +311,16 @@ String _describeAuthError(Object error) {
   if (error is PendingEmailNotFoundException) {
     return '로그인을 요청했던 기기(브라우저)에서 다시 열어주세요.';
   }
+  if (error is FirebaseAuthException) {
+    switch (error.code) {
+      case 'invalid-action-code':
+        return '유효하지 않거나 이미 사용된 링크입니다. 입력한 이메일이 맞는지 확인하거나, 새 로그인 링크를 다시 요청해주세요.';
+      case 'expired-action-code':
+        return '로그인 링크가 만료되었습니다. 새 로그인 링크를 다시 요청해주세요.';
+      case 'invalid-email':
+        return '이메일 형식을 다시 확인해주세요.';
+    }
+  }
   return '로그인 처리 중 문제가 발생했습니다: $error';
 }
 
@@ -321,6 +346,7 @@ class _SignInPrompt extends ConsumerStatefulWidget {
 
 class _SignInPromptState extends ConsumerState<_SignInPrompt> {
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _manualEmailController = TextEditingController();
   bool _sending = false;
   bool _linkSent = false;
   String? _errorMessage;
@@ -344,6 +370,7 @@ class _SignInPromptState extends ConsumerState<_SignInPrompt> {
   @override
   void dispose() {
     _emailController.dispose();
+    _manualEmailController.dispose();
     super.dispose();
   }
 
@@ -360,20 +387,26 @@ class _SignInPromptState extends ConsumerState<_SignInPrompt> {
       _checkingLink = false;
       _isLinkMode = true;
       _pendingEmail = email;
-      if (email == null) {
-        _errorMessage = _describeAuthError(const PendingEmailNotFoundException());
-      }
     });
   }
 
+  // 이 브라우저에 저장된 이메일이 없으면(다른 기기에서 링크를 열었거나, 관리자가
+  // 발송 한도를 우회하려고 직접 생성한 링크를 열었을 때) 사용자가 입력한 이메일을 쓴다.
   Future<void> _confirmSignIn() async {
     if (_confirming) return;
+    String? manualEmail;
+    if (_pendingEmail == null) {
+      manualEmail = _manualEmailController.text.trim();
+      if (manualEmail.isEmpty) return;
+    }
     setState(() {
       _confirming = true;
       _errorMessage = null;
     });
     try {
-      await ref.read(authServiceProvider).completeSignInIfLink(Uri.base.toString());
+      await ref
+          .read(authServiceProvider)
+          .completeSignInIfLink(Uri.base.toString(), emailOverride: manualEmail);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -422,10 +455,21 @@ class _SignInPromptState extends ConsumerState<_SignInPrompt> {
         child: Column(
           children: [
             Text(
-              _pendingEmail != null ? '$_pendingEmail 계정으로 로그인하시겠습니까?' : '로그인 링크가 확인되었습니다.',
+              _pendingEmail != null
+                  ? '$_pendingEmail 계정으로 로그인하시겠습니까?'
+                  : '이 브라우저에서 로그인 요청 정보를 찾을 수 없습니다.\n로그인 링크를 요청했던 이메일을 입력해주세요.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium,
             ),
+            if (_pendingEmail == null) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _manualEmailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: '이메일'),
+                onSubmitted: (_) => _confirmSignIn(),
+              ),
+            ],
             if (_errorMessage != null) ...[
               const SizedBox(height: 8),
               Text(
@@ -434,19 +478,17 @@ class _SignInPromptState extends ConsumerState<_SignInPrompt> {
                 style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
               ),
             ],
-            if (_pendingEmail != null) ...[
-              const SizedBox(height: 12),
-              FilledButton.tonal(
-                onPressed: _confirming ? null : _confirmSignIn,
-                child: _confirming
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('로그인 계속하기'),
-              ),
-            ],
+            const SizedBox(height: 12),
+            FilledButton.tonal(
+              onPressed: _confirming ? null : _confirmSignIn,
+              child: _confirming
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('로그인 계속하기'),
+            ),
           ],
         ),
       );
@@ -535,11 +577,21 @@ class _MemoSection extends StatelessWidget {
     final selectedIndex = memos.indexWhere((memo) => memo.id == selectedMemoId);
     final hasSelection = selectedIndex != -1;
 
+    final captionStyle = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline);
+
+    String? timelineLabel;
+    if (hasSelection) {
+      final createdText = Formatters.dateTime(memos[selectedIndex].createdAt);
+      final updatedText = Formatters.dateTime(memos[selectedIndex].updatedAt);
+      // 만든 뒤 한 번도 안 고쳤으면 생성 시각 하나만, 고쳤으면 화살표로 이어서 한 줄에.
+      timelineLabel = createdText == updatedText ? '생성 $createdText' : '생성 $createdText → 수정 $updatedText';
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _MemoChipWrap(memos: memos, selectedMemoId: selectedMemoId, onSelect: onSelect, onAdd: onAdd),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         if (hasSelection) ...[
           Row(
             children: [
@@ -578,10 +630,16 @@ class _MemoSection extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(timelineLabel!, style: captionStyle),
+          ),
           const SizedBox(height: 8),
           TextField(
             controller: contentController,
             maxLines: 20,
+            maxLength: maxMemoContentLength,
             onChanged: onContentChanged,
           ),
         ] else
@@ -609,6 +667,12 @@ class _MemoChipWrap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = theme.extension<AppAccentColors>()?.todo ?? theme.colorScheme.primary;
+    final onAccent = ThemeData.estimateBrightnessForColor(accent) == Brightness.dark
+        ? Colors.white
+        : Colors.black87;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         // 카드 폭에 맞춰 칩 하나의 최대 너비를 조절한다: 데스크톱 그리드(폭 넓음)에서는
@@ -621,27 +685,86 @@ class _MemoChipWrap extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             for (final memo in memos)
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: chipMaxWidth),
-                child: ChoiceChip(
-                  label: Text(
-                    memo.title.trim().isEmpty ? '(제목 없음)' : memo.title,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  showCheckmark: false,
-                  visualDensity: VisualDensity.compact,
-                  selected: memo.id == selectedMemoId,
-                  onSelected: (_) => onSelect(memo.id),
-                ),
+              _MemoChip(
+                memo: memo,
+                maxWidth: chipMaxWidth,
+                selected: memo.id == selectedMemoId,
+                accent: accent,
+                onAccent: onAccent,
+                onSelected: () => onSelect(memo.id),
               ),
-            IconButton.filledTonal(
+            IconButton(
               onPressed: onAdd,
               icon: const Icon(Icons.add),
               tooltip: '새 메모 추가',
+              style: IconButton.styleFrom(
+                backgroundColor: accent.withValues(alpha: 0.12),
+                foregroundColor: accent,
+              ),
             ),
           ],
         );
       },
+    );
+  }
+}
+
+class _MemoChip extends StatelessWidget {
+  const _MemoChip({
+    required this.memo,
+    required this.maxWidth,
+    required this.selected,
+    required this.accent,
+    required this.onAccent,
+    required this.onSelected,
+  });
+
+  final MemoItem memo;
+  final double maxWidth;
+  final bool selected;
+  final Color accent;
+  final Color onAccent;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final labelColor = selected ? onAccent : theme.colorScheme.onSurface;
+    final isEmpty = memo.content.trim().isEmpty;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: ChoiceChip(
+        avatar: Icon(Icons.sticky_note_2_outlined, size: 16, color: labelColor),
+        label: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                memo.title.trim().isEmpty ? '(제목 없음)' : memo.title,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            // 아직 내용을 안 쓴 메모라는 걸 눈에 띄게 표시한다.
+            if (isEmpty) ...[
+              const SizedBox(width: 6),
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(color: labelColor.withValues(alpha: 0.6), shape: BoxShape.circle),
+              ),
+            ],
+          ],
+        ),
+        labelStyle: TextStyle(color: labelColor, fontWeight: selected ? FontWeight.w600 : FontWeight.w400),
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        selected: selected,
+        selectedColor: accent,
+        backgroundColor: Colors.transparent,
+        side: BorderSide(color: accent.withValues(alpha: selected ? 1 : 0.4)),
+        onSelected: (_) => onSelected(),
+      ),
     );
   }
 }

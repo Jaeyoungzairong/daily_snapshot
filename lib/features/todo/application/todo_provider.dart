@@ -6,6 +6,16 @@ import '../data/memo_item.dart';
 import '../data/todo_item.dart';
 import '../data/todo_repository.dart';
 
+/// 할일/메모 문서는 Firestore 문서 하나(최대 1MiB)에 배열로 통째로 저장되므로, 개수가
+/// 무한정 늘어나면 저장 자체가 실패할 수 있다. "오늘 할 일"/"빠른 메모" 용도에 맞는
+/// 넉넉한 상한을 둬서 이를 방지한다.
+const int maxTodoItems = 30;
+const int maxMemoCount = 15;
+
+/// 메모 한 개의 최대 글자 수. 문서 하나에 모든 메모가 함께 저장되므로, 메모 하나가
+/// 지나치게 길어지는 것도 같은 이유로 제한한다.
+const int maxMemoContentLength = 5000;
+
 /// 로그인(uid)이 있을 때만 만들어진다 — TodoCard가 로그인 안 됐을 때는 이 provider를
 /// 아예 보지 않으므로, 여기서 uid가 없어 던지는 예외는 실제로는 발생하지 않는 방어 코드다.
 final todoRepositoryProvider = Provider<TodoRepository>((ref) {
@@ -29,10 +39,12 @@ class TodoListNotifier extends StreamNotifier<List<TodoItem>> {
     return _repository.watchItems();
   }
 
-  Future<void> add(String text) async {
+  /// 추가에 성공하면 true, 개수 상한(maxTodoItems)에 걸려 추가하지 않았으면 false를 반환한다.
+  Future<bool> add(String text) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty) return false;
     final current = state.value ?? [];
+    if (current.length >= maxTodoItems) return false;
     final item = TodoItem(
       id: '${DateTime.now().microsecondsSinceEpoch}-${_idSequence++}',
       text: trimmed,
@@ -42,6 +54,7 @@ class TodoListNotifier extends StreamNotifier<List<TodoItem>> {
     // 낙관적으로 먼저 반영 — 실제 확정 값은 뒤이어 Firestore 실시간 스트림으로 들어온다.
     state = AsyncData([...current, item]);
     await _repository.addItem(item);
+    return true;
   }
 
   Future<void> toggle(String id) async {
@@ -91,8 +104,10 @@ class TodoMemoNotifier extends StreamNotifier<List<MemoItem>> {
     return _repository.watchMemos();
   }
 
-  Future<MemoItem> addMemo() async {
+  /// 개수 상한(maxMemoCount)에 걸리면 추가하지 않고 null을 반환한다.
+  Future<MemoItem?> addMemo() async {
     final current = state.value ?? [];
+    if (current.length >= maxMemoCount) return null;
     final now = DateTime.now();
     final memo = MemoItem(
       id: '${now.microsecondsSinceEpoch}-${_idSequence++}',

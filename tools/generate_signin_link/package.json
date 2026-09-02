@@ -1,0 +1,10 @@
+{
+  "name": "generate-signin-link",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Firebase Auth 이메일 발송 한도와 무관하게 로그인 링크를 직접 생성하는 관리자 전용 비상 도구",
+  "main": "generate_link.js",
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}

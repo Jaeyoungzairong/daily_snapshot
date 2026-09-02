@@ -52,3 +52,7 @@ lib/core/config/secrets.json
 
 # Local dev-machine convenience script (PC-specific absolute paths)
 /serve_static.bat
+
+# Admin bypass tool (tools/generate_signin_link) - service account key + npm deps
+tools/generate_signin_link/serviceAccountKey.json
+tools/generate_signin_link/node_modules/
