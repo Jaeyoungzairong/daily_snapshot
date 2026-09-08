@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/config/local_config.dart';
 import '../../../core/theme/theme_mode_provider.dart';
 import '../../exchange_rate/presentation/exchange_rate_card.dart';
+import '../../files/presentation/file_card.dart';
 import '../../shortcuts/presentation/shortcuts_card.dart';
 import '../../todo/presentation/todo_card.dart';
 import '../../weather/presentation/weather_card.dart';
@@ -17,6 +18,7 @@ class DashboardPage extends ConsumerWidget {
     ShortcutsCard(),
     ExchangeRateCard(),
     TodoCard(),
+    FileCard(),
   ];
 
   @override

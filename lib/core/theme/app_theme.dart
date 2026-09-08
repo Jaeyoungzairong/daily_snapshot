@@ -8,20 +8,23 @@ class AppAccentColors extends ThemeExtension<AppAccentColors> {
     required this.fx,
     required this.todo,
     required this.shortcuts,
+    required this.files,
   });
 
   final Color weather;
   final Color fx;
   final Color todo;
   final Color shortcuts;
+  final Color files;
 
   @override
-  AppAccentColors copyWith({Color? weather, Color? fx, Color? todo, Color? shortcuts}) {
+  AppAccentColors copyWith({Color? weather, Color? fx, Color? todo, Color? shortcuts, Color? files}) {
     return AppAccentColors(
       weather: weather ?? this.weather,
       fx: fx ?? this.fx,
       todo: todo ?? this.todo,
       shortcuts: shortcuts ?? this.shortcuts,
+      files: files ?? this.files,
     );
   }
 
@@ -33,6 +36,7 @@ class AppAccentColors extends ThemeExtension<AppAccentColors> {
       fx: Color.lerp(fx, other.fx, t)!,
       todo: Color.lerp(todo, other.todo, t)!,
       shortcuts: Color.lerp(shortcuts, other.shortcuts, t)!,
+      files: Color.lerp(files, other.files, t)!,
     );
   }
 }
@@ -46,10 +50,12 @@ class AppTheme {
   static const _fxAccentLight = Color(0xFF0F6E56);
   static const _todoAccentLight = Color(0xFF534AB7);
   static const _shortcutsAccentLight = Color(0xFF185FA5);
+  static const _filesAccentLight = Color(0xFF2E7D45);
   static const _weatherAccentDark = Color(0xFFF0997B);
   static const _fxAccentDark = Color(0xFF5DCAA5);
   static const _todoAccentDark = Color(0xFFAFA9EC);
   static const _shortcutsAccentDark = Color(0xFF85B7EB);
+  static const _filesAccentDark = Color(0xFF83D89B);
 
   static ThemeData get light => _themeFrom(
         ColorScheme.fromSeed(seedColor: _seedColor),
@@ -58,6 +64,7 @@ class AppTheme {
           fx: _fxAccentLight,
           todo: _todoAccentLight,
           shortcuts: _shortcutsAccentLight,
+          files: _filesAccentLight,
         ),
       );
 
@@ -68,6 +75,7 @@ class AppTheme {
           fx: _fxAccentDark,
           todo: _todoAccentDark,
           shortcuts: _shortcutsAccentDark,
+          files: _filesAccentDark,
         ),
       );
 

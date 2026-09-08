@@ -51,4 +51,13 @@ class Formatters {
     final min = dateTime.minute.toString().padLeft(2, '0');
     return '${monthLabel(dateTime)}.${dateTime.day} $h:$min';
   }
+
+  /// 예: 900 -> "900B", 15360 -> "15.0KB", 5242880 -> "5.0MB".
+  static String fileSize(int bytes) {
+    const kb = 1024;
+    const mb = kb * 1024;
+    if (bytes >= mb) return '${(bytes / mb).toStringAsFixed(1)}MB';
+    if (bytes >= kb) return '${(bytes / kb).toStringAsFixed(1)}KB';
+    return '${bytes}B';
+  }
 }

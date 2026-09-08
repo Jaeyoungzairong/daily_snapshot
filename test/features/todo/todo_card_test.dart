@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 // Override 타입이 flutter_riverpod의 공개 API로 노출돼 있지 않아 반환 타입을 명시할 수 없다.
 // ignore: strict_top_level_inference
 _signedInOverrides() => [
-      authUidProvider.overrideWith((ref) => Stream.value('test-uid')),
+      authUidProvider.overrideWith((ref) => const AsyncData('test-uid')),
       todoRepositoryProvider.overrideWithValue(TodoRepository(store: _InMemoryCloudListStore())),
     ];
 
