@@ -6,6 +6,7 @@ import '../../../core/auth/auth_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/url_opener.dart';
+import '../../../core/widgets/confirm_dialog.dart';
 import '../../../core/widgets/dashboard_card.dart';
 import '../../../core/widgets/loading_error_view.dart';
 import '../application/file_provider.dart';
@@ -33,6 +34,35 @@ const Map<String, IconData> _iconByExtension = {
 };
 
 IconData _iconFor(String? extension) => _iconByExtension[extension?.toLowerCase()] ?? Icons.insert_drive_file_outlined;
+
+enum _DuplicateChoice { cancel, skipDuplicates, uploadAnyway }
+
+/// 이미 목록에 같은 이름의 파일이 있을 때 어떻게 할지 묻는다. 무조건 막거나(관리자 아니면
+/// 재업로드할 방법이 없어짐) 조용히 이름을 바꾸지 않고, 판단을 사용자에게 맡긴다.
+Future<_DuplicateChoice> _confirmDuplicateNames(BuildContext context, List<String> duplicateNames) async {
+  final choice = await showDialog<_DuplicateChoice>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('동일한 이름의 파일이 있습니다'),
+      content: Text('이미 목록에 있는 파일명과 같습니다:\n${duplicateNames.join(', ')}'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, _DuplicateChoice.cancel),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _DuplicateChoice.skipDuplicates),
+          child: const Text('중복 제외하고 업로드'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _DuplicateChoice.uploadAnyway),
+          child: const Text('그래도 업로드'),
+        ),
+      ],
+    ),
+  );
+  return choice ?? _DuplicateChoice.cancel;
+}
 
 class FileCard extends ConsumerWidget {
   const FileCard({super.key});
@@ -67,17 +97,26 @@ class _FileListSection extends ConsumerWidget {
     final files = await FilePicker.pickFiles();
     if (files.isEmpty) return;
 
+    final existingNames = (ref.read(filesProvider).value ?? []).map((entry) => entry.name).toSet();
+    final duplicateNames = files.map((file) => file.name).where(existingNames.contains).toSet();
+
+    var filesToUpload = files;
+    if (duplicateNames.isNotEmpty) {
+      if (!context.mounted) return;
+      final choice = await _confirmDuplicateNames(context, duplicateNames.toList());
+      if (choice == _DuplicateChoice.cancel) return;
+      if (choice == _DuplicateChoice.skipDuplicates) {
+        filesToUpload = files.where((file) => !duplicateNames.contains(file.name)).toList();
+        if (filesToUpload.isEmpty) return;
+      }
+    }
+
     try {
-      await ref.read(fileUploadProvider.notifier).uploadFiles(files);
-    } on FileCountLimitExceededException {
-      if (!context.mounted) return;
+      final result = await ref.read(fileUploadProvider.notifier).uploadFiles(filesToUpload);
+      if (!context.mounted || !result.hasFailures) return;
+      final summary = result.failures.map((f) => '${f.fileName}: ${f.reason}').join(', ');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('파일은 최대 $maxFileCount개까지 올릴 수 있습니다.')),
-      );
-    } on FileTooLargeException catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${error.fileName}: 파일 하나는 최대 ${Formatters.fileSize(maxFileSizeBytes)}까지 올릴 수 있습니다.')),
+        SnackBar(content: Text('${filesToUpload.length}개 중 ${result.succeededCount}개 업로드 완료 · 실패: $summary')),
       );
     } catch (error) {
       if (!context.mounted) return;
@@ -93,6 +132,8 @@ class _FileListSection extends ConsumerWidget {
     final filesAsync = ref.watch(filesProvider);
     final uploadProgress = ref.watch(fileUploadProvider);
     final isAdmin = ref.watch(isAdminProvider).value ?? false;
+    final fileCount = filesAsync.value?.length ?? 0;
+    final captionStyle = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -102,10 +143,7 @@ class _FileListSection extends ConsumerWidget {
           error: (error, _) => ErrorView(message: error.toString()),
           data: (files) {
             if (files.isEmpty) {
-              return Text(
-                '올라온 파일이 없습니다. + 버튼을 눌러 추가해보세요.',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
-              );
+              return Text('올라온 파일이 없습니다. + 버튼을 눌러 추가해보세요.', style: captionStyle);
             }
             return ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 220),
@@ -122,17 +160,26 @@ class _FileListSection extends ConsumerWidget {
         const SizedBox(height: 12),
         if (uploadProgress != null) ...[
           Text(
-            '${uploadProgress.fileName} 업로드 중… ${(uploadProgress.progress * 100).round()}%',
+            uploadProgress.total > 1
+                ? '(${uploadProgress.index}/${uploadProgress.total}) ${uploadProgress.fileName} 업로드 중… '
+                    '${(uploadProgress.progress * 100).round()}%'
+                : '${uploadProgress.fileName} 업로드 중… ${(uploadProgress.progress * 100).round()}%',
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 4),
           LinearProgressIndicator(value: uploadProgress.progress),
           const SizedBox(height: 12),
         ],
-        OutlinedButton.icon(
-          onPressed: uploadProgress == null ? () => _pickAndUpload(context, ref) : null,
-          icon: const Icon(Icons.upload_file),
-          label: const Text('파일 추가'),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            OutlinedButton.icon(
+              onPressed: uploadProgress == null ? () => _pickAndUpload(context, ref) : null,
+              icon: const Icon(Icons.upload_file),
+              label: const Text('파일 추가'),
+            ),
+            Text('$fileCount/$maxFileCount개', style: captionStyle),
+          ],
         ),
       ],
     );
@@ -163,18 +210,12 @@ class _FileRow extends ConsumerWidget {
   }
 
   Future<void> _delete(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('파일 삭제'),
-        content: Text('"${entry.name}"을(를) 삭제할까요? 되돌릴 수 없습니다.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('삭제')),
-        ],
-      ),
+    final confirmed = await confirmAction(
+      context,
+      title: '파일 삭제',
+      message: '"${entry.name}"을(를) 삭제할까요? 되돌릴 수 없습니다.',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     try {
       await ref.read(fileRepositoryProvider).deleteFile(entry);
     } catch (error) {
@@ -188,7 +229,7 @@ class _FileRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final extension = entry.name.contains('.') ? entry.name.split('.').last : null;
+    final extension = entry.extension;
     final captionStyle = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline);
 
     return Padding(

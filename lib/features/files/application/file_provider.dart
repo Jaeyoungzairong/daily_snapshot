@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_provider.dart';
+import '../../../core/utils/formatters.dart';
 import '../data/file_entry.dart';
 import '../data/file_mime.dart';
 import '../data/file_repository.dart';
@@ -10,16 +11,20 @@ import '../data/file_repository.dart';
 const int maxFileCount = 30;
 const int maxFileSizeBytes = 100 * 1024 * 1024;
 
-/// [FileUploadNotifier.uploadFiles]가 개수 상한(maxFileCount)에 걸려 더 이상 올릴 수
-/// 없을 때 던진다.
-class FileCountLimitExceededException implements Exception {
-  const FileCountLimitExceededException();
+/// 여러 파일을 한 번에 올릴 때 실패한 파일 하나의 정보.
+class UploadFailure {
+  const UploadFailure({required this.fileName, required this.reason});
+  final String fileName;
+  final String reason;
 }
 
-/// 파일 하나가 용량 상한(maxFileSizeBytes)을 넘을 때 던진다.
-class FileTooLargeException implements Exception {
-  const FileTooLargeException(this.fileName);
-  final String fileName;
+/// [FileUploadNotifier.uploadFiles] 결과. 일부만 실패해도 나머지는 계속 시도하므로,
+/// 성공 개수와 실패 목록을 같이 돌려준다.
+class UploadResult {
+  const UploadResult({required this.succeededCount, required this.failures});
+  final int succeededCount;
+  final List<UploadFailure> failures;
+  bool get hasFailures => failures.isNotEmpty;
 }
 
 final fileRepositoryProvider = Provider<FileRepository>((ref) => FileRepository());
@@ -28,20 +33,29 @@ final filesProvider = StreamProvider<List<FileEntry>>((ref) {
   return ref.watch(fileRepositoryProvider).watchFiles();
 });
 
-/// 업로드 중인 파일명과 진행률(0.0~1.0). 업로드 중이 아니면 null.
+/// 업로드 중인 파일명과 진행률(0.0~1.0), 여러 개를 한 번에 올릴 때 전체 중 몇 번째인지.
+/// 업로드 중이 아니면 null.
 class UploadProgress {
-  const UploadProgress({required this.fileName, required this.progress});
+  const UploadProgress({
+    required this.fileName,
+    required this.progress,
+    required this.index,
+    required this.total,
+  });
   final String fileName;
   final double progress;
+  final int index;
+  final int total;
 }
 
 class FileUploadNotifier extends Notifier<UploadProgress?> {
   @override
   UploadProgress? build() => null;
 
-  /// 선택된 파일들을 순서대로(동시에 아니라 하나씩) 업로드한다. 도중에 개수/용량
-  /// 상한에 걸리면 그 시점까지는 이미 업로드된 파일을 남겨둔 채 예외를 던진다.
-  Future<void> uploadFiles(List<PlatformFile> files) async {
+  /// 선택된 파일들을 순서대로(동시에 아니라 하나씩) 업로드한다. 파일 하나가 개수/용량
+  /// 상한에 걸리거나 업로드 자체가 실패해도 그 파일만 건너뛰고 나머지는 계속 시도한다 —
+  /// 예전엔 중간에 하나만 실패해도 그 뒤 파일들은 시도조차 안 됐다.
+  Future<UploadResult> uploadFiles(List<PlatformFile> files) async {
     final repository = ref.read(fileRepositoryProvider);
     final email = ref.read(authEmailProvider).value;
     if (email == null) {
@@ -51,55 +65,85 @@ class FileUploadNotifier extends Notifier<UploadProgress?> {
     }
 
     var count = (ref.read(filesProvider).value ?? []).length;
+    var succeeded = 0;
+    final failures = <UploadFailure>[];
+
     try {
-      for (final file in files) {
+      for (var i = 0; i < files.length; i++) {
+        final file = files[i];
         if (count >= maxFileCount) {
-          throw const FileCountLimitExceededException();
+          failures.add(UploadFailure(fileName: file.name, reason: '파일은 최대 $maxFileCount개까지 올릴 수 있습니다.'));
+          continue;
         }
+
         // 브라우저가 알려주는 크기(I/O 없이 바로 확인 가능)로 먼저 걸러서, 너무 큰
         // 파일은 굳이 메모리에 읽어들이지 않게 한다.
         final knownSize = file.lengthSync();
         if (knownSize != null && knownSize > maxFileSizeBytes) {
-          throw FileTooLargeException(file.name);
-        }
-
-        final bytes = await file.readAsBytes();
-        if (bytes.length > maxFileSizeBytes) {
-          throw FileTooLargeException(file.name);
-        }
-
-        state = UploadProgress(fileName: file.name, progress: 0);
-        final upload = repository.startUpload(
-          name: file.name,
-          bytes: bytes,
-          contentType: mimeTypeForExtension(file.extension),
-        );
-        final subscription = upload.task.snapshotEvents.listen((snapshot) {
-          final total = snapshot.totalBytes;
-          state = UploadProgress(
-            fileName: file.name,
-            progress: total == 0 ? 0 : snapshot.bytesTransferred / total,
+          failures.add(
+            UploadFailure(
+              fileName: file.name,
+              reason: '파일 하나는 최대 ${Formatters.fileSize(maxFileSizeBytes)}까지 올릴 수 있습니다.',
+            ),
           );
-        });
-        await upload.task;
-        await subscription.cancel();
+          continue;
+        }
 
-        await repository.registerFile(
-          FileEntry(
-            id: upload.docId,
+        try {
+          final bytes = await file.readAsBytes();
+          if (bytes.length > maxFileSizeBytes) {
+            failures.add(
+              UploadFailure(
+                fileName: file.name,
+                reason: '파일 하나는 최대 ${Formatters.fileSize(maxFileSizeBytes)}까지 올릴 수 있습니다.',
+              ),
+            );
+            continue;
+          }
+
+          state = UploadProgress(fileName: file.name, progress: 0, index: i + 1, total: files.length);
+          final upload = repository.startUpload(
             name: file.name,
-            sizeBytes: bytes.length,
+            bytes: bytes,
             contentType: mimeTypeForExtension(file.extension),
-            storagePath: upload.storagePath,
-            uploadedByEmail: email,
-            uploadedAt: DateTime.now(),
-          ),
-        );
-        count++;
+          );
+          final subscription = upload.task.snapshotEvents.listen((snapshot) {
+            final totalBytes = snapshot.totalBytes;
+            state = UploadProgress(
+              fileName: file.name,
+              progress: totalBytes == 0 ? 0 : snapshot.bytesTransferred / totalBytes,
+              index: i + 1,
+              total: files.length,
+            );
+          });
+          try {
+            await upload.task;
+          } finally {
+            await subscription.cancel();
+          }
+
+          await repository.registerFile(
+            FileEntry(
+              id: upload.docId,
+              name: file.name,
+              sizeBytes: bytes.length,
+              contentType: mimeTypeForExtension(file.extension),
+              storagePath: upload.storagePath,
+              uploadedByEmail: email,
+              uploadedAt: DateTime.now(),
+            ),
+          );
+          count++;
+          succeeded++;
+        } catch (error) {
+          failures.add(UploadFailure(fileName: file.name, reason: error.toString()));
+        }
       }
     } finally {
       state = null;
     }
+
+    return UploadResult(succeededCount: succeeded, failures: failures);
   }
 }
 

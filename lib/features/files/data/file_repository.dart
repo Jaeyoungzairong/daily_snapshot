@@ -20,9 +20,10 @@ class FileRepository {
 
   CollectionReference<Map<String, dynamic>> get _collection => _firestore.collection('shared_files');
 
+  /// 최신 파일이 위로 오도록 내림차순 정렬한다.
   Stream<List<FileEntry>> watchFiles() {
     return _collection
-        .orderBy('uploadedAt')
+        .orderBy('uploadedAt', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs.map((doc) => FileEntry.fromJson(doc.id, doc.data())).toList());
   }

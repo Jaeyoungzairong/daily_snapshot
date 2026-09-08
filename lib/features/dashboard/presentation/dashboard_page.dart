@@ -16,9 +16,9 @@ class DashboardPage extends ConsumerWidget {
   static const List<Widget> _cards = [
     WeatherCard(),
     ShortcutsCard(),
-    ExchangeRateCard(),
     TodoCard(),
     FileCard(),
+    ExchangeRateCard(),
   ];
 
   @override
