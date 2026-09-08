@@ -19,16 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: subosito/flutter-action@v2
+      - uses: ./.github/actions/build-web
         with:
-          channel: stable
-      - run: flutter pub get
-      - name: Build web
-        run: |
-          APP_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
-          flutter build web --base-href "/${{ github.event.repository.name }}/" \
-            --dart-define=KMA_SERVICE_KEY=${{ secrets.KMA_SERVICE_KEY }} \
-            --dart-define=APP_VERSION="$APP_VERSION"
+          base-href: "/${{ github.event.repository.name }}/"
+          kma-service-key: ${{ secrets.KMA_SERVICE_KEY }}
       - uses: actions/upload-pages-artifact@v5
         with:
           path: build/web

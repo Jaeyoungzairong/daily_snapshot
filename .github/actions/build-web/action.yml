@@ -1,0 +1,28 @@
+name: Build Flutter web
+description: Installs Flutter, fetches dependencies, and builds the web app. Assumes the repo is already checked out.
+
+inputs:
+  base-href:
+    description: Base href for the built web app
+    required: false
+    default: '/'
+  kma-service-key:
+    description: KMA_SERVICE_KEY dart-define value
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: subosito/flutter-action@v2
+      with:
+        channel: stable
+    - name: Install dependencies
+      shell: bash
+      run: flutter pub get
+    - name: Build web
+      shell: bash
+      run: |
+        APP_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+        flutter build web --base-href "${{ inputs.base-href }}" \
+          --dart-define=KMA_SERVICE_KEY=${{ inputs.kma-service-key }} \
+          --dart-define=APP_VERSION="$APP_VERSION"

@@ -146,7 +146,7 @@ class _FileListSection extends ConsumerWidget {
               return Text('올라온 파일이 없습니다. + 버튼을 눌러 추가해보세요.', style: captionStyle);
             }
             return ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220),
+              constraints: const BoxConstraints(maxHeight: 660),
               child: SingleChildScrollView(
                 child: Column(
                   children: [
