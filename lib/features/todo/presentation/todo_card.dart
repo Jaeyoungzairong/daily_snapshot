@@ -10,32 +10,12 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/page_reload.dart';
 import '../../../core/utils/web_url.dart';
+import '../../../core/widgets/confirm_dialog.dart';
 import '../../../core/widgets/dashboard_card.dart';
 import '../../../core/widgets/loading_error_view.dart';
 import '../application/todo_provider.dart';
 import '../data/memo_item.dart';
 import '../data/todo_item.dart';
-
-/// 실수 방지용 확인 다이얼로그. 사용자가 [confirmLabel] 버튼을 눌렀을 때만 true를 반환한다.
-Future<bool> _confirmAction(
-  BuildContext context, {
-  required String title,
-  required String message,
-  String confirmLabel = '삭제',
-}) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(title),
-      content: Text(message),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-        TextButton(onPressed: () => Navigator.pop(context, true), child: Text(confirmLabel)),
-      ],
-    ),
-  );
-  return confirmed ?? false;
-}
 
 class TodoCard extends ConsumerStatefulWidget {
   const TodoCard({super.key});
@@ -146,7 +126,7 @@ class _TodoCardState extends ConsumerState<TodoCard> {
 
   Future<void> _signOut() async {
     if (_signingOut) return;
-    final confirmed = await _confirmAction(
+    final confirmed = await confirmAction(
       context,
       title: '로그아웃',
       message: '로그아웃하시겠습니까?',
@@ -618,7 +598,7 @@ class _MemoSection extends StatelessWidget {
               ),
               IconButton(
                 onPressed: () async {
-                  final confirmed = await _confirmAction(
+                  final confirmed = await confirmAction(
                     context,
                     title: '메모 삭제',
                     message: '이 메모를 삭제할까요? 삭제한 내용은 복구할 수 없습니다.',
@@ -812,7 +792,7 @@ class _TodoList extends ConsumerWidget {
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: () async {
-                final confirmed = await _confirmAction(
+                final confirmed = await confirmAction(
                   context,
                   title: '완료 항목 지우기',
                   message: '완료된 항목을 모두 지울까요?',
@@ -854,7 +834,7 @@ class _TodoRow extends StatelessWidget {
         ),
         IconButton(
           onPressed: () async {
-            final confirmed = await _confirmAction(
+            final confirmed = await confirmAction(
               context,
               title: '할 일 삭제',
               message: '"${item.text}" 항목을 삭제할까요?',
