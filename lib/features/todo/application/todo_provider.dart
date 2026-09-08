@@ -16,6 +16,10 @@ const int maxMemoCount = 15;
 /// 지나치게 길어지는 것도 같은 이유로 제한한다.
 const int maxMemoContentLength = 5000;
 
+/// 할 일 한 개의 최대 글자 수. 할 일은 짧은 한 줄짜리 작업이 목적이라 메모보다 훨씬
+/// 짧게 제한한다 — 목록 한 항목이 지나치게 길어져 다른 항목들을 밀어내는 것도 방지한다.
+const int maxTodoTextLength = 100;
+
 /// 로그인(uid)이 있을 때만 만들어진다 — TodoCard가 로그인 안 됐을 때는 이 provider를
 /// 아예 보지 않으므로, 여기서 uid가 없어 던지는 예외는 실제로는 발생하지 않는 방어 코드다.
 final todoRepositoryProvider = Provider<TodoRepository>((ref) {

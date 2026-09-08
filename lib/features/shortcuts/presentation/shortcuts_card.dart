@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/dashboard_card.dart';
+import '../../../core/utils/url_opener.dart';
 import '../data/shortcut_link.dart';
-import '../util/url_opener.dart';
 
 class ShortcutsCard extends StatelessWidget {
   const ShortcutsCard({super.key});

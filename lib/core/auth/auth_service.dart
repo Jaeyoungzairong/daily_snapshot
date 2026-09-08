@@ -29,8 +29,22 @@ class AuthService {
   final FirebaseFirestore _firestore;
   final KeyValueStore _store;
 
-  /// 로그인 상태가 바뀔 때마다 현재 uid(로그인 안 됐으면 null)를 흘려보낸다.
-  Stream<String?> uidChanges() => _auth.authStateChanges().map((user) => user?.uid);
+  /// 로그인 상태가 바뀔 때마다 현재 사용자(로그인 안 됐으면 null)를 흘려보낸다. uid/email
+  /// 등 파생 정보는 이 스트림 하나만 구독해서 만들어야 한다 — authStateChanges()는 일반
+  /// 브로드캐스트 스트림이라 여러 곳에서 각자 새로 구독하면, 이미 지나간 "로그인 복원"
+  /// 이벤트를 뒤늦게 구독한 쪽은 다시 받지 못해 영원히 대기하게 된다.
+  Stream<User?> userChanges() => _auth.authStateChanges();
+
+  /// [email]의 admin_allowed_emails 문서에 isAdmin:true가 있는지 실시간으로 흘려보낸다
+  /// (공유 파일 삭제 등 관리자 전용 기능을 UI에서 보여줄지 판단하는 용도 — 실제 권한
+  /// 검증은 Firestore/Storage 규칙에서 같은 필드를 다시 확인한다).
+  Stream<bool> watchIsAdmin(String email) {
+    return _firestore
+        .collection('admin_allowed_emails')
+        .doc(email.toLowerCase())
+        .snapshots()
+        .map((doc) => doc.data()?['isAdmin'] == true);
+  }
 
   bool isSignInLink(String link) => _auth.isSignInWithEmailLink(link);
 

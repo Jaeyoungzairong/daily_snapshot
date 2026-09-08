@@ -256,6 +256,7 @@ class _TodoCardState extends ConsumerState<TodoCard> {
               Expanded(
                 child: TextField(
                   controller: _newItemController,
+                  maxLength: maxTodoTextLength,
                   decoration: const InputDecoration(
                     labelText: '할 일 추가',
                     //hintText: '예: 3시 팀 미팅 자료 준비',
@@ -843,6 +844,8 @@ class _TodoRow extends StatelessWidget {
         Expanded(
           child: Text(
             item.text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: item.done ? theme.colorScheme.outline : null,
               decoration: item.done ? TextDecoration.lineThrough : null,
