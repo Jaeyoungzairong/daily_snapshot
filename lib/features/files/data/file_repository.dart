@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
 
 import 'file_entry.dart';
 
@@ -48,6 +49,31 @@ class FileRepository {
   Future<void> registerFile(FileEntry entry) => _collection.doc(entry.id).set(entry.toJson());
 
   Future<String> getDownloadUrl(String storagePath) => _storage.ref(storagePath).getDownloadURL();
+
+  /// 다운로드 URL을 직접 스트리밍으로 받아온다. firebase_storage의 getData()는 진행률
+  /// 콜백이 없어서, 진행 상황을 보여주려면 http로 직접 받아야 한다(Storage 버킷 CORS
+  /// 설정 필요).
+  Future<Uint8List> downloadBytes(
+    String storagePath, {
+    void Function(int received, int? total)? onProgress,
+  }) async {
+    final url = await getDownloadUrl(storagePath);
+    final client = http.Client();
+    try {
+      final response = await client.send(http.Request('GET', Uri.parse(url)));
+      final total = response.contentLength;
+      final bytes = <int>[];
+      var received = 0;
+      await for (final chunk in response.stream) {
+        bytes.addAll(chunk);
+        received += chunk.length;
+        onProgress?.call(received, total);
+      }
+      return Uint8List.fromList(bytes);
+    } finally {
+      client.close();
+    }
+  }
 
   /// Storage 파일을 먼저 지우고, 성공했을 때만 Firestore 문서를 지운다. 순서를 바꾸면
   /// Storage 삭제가 실패했을 때 목록에서는 사라졌는데 Storage에는 파일이 남아 용량을
