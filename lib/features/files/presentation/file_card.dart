@@ -199,8 +199,7 @@ class _FileRow extends ConsumerWidget {
 
   Future<void> _download(BuildContext context, WidgetRef ref) async {
     try {
-      final url = await ref.read(fileRepositoryProvider).getDownloadUrl(entry.storagePath);
-      openUrl(url);
+      await ref.read(fileDownloadProvider.notifier).download(entry);
     } catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -231,6 +230,8 @@ class _FileRow extends ConsumerWidget {
     final theme = Theme.of(context);
     final extension = entry.extension;
     final captionStyle = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline);
+    final downloadProgress = ref.watch(fileDownloadProvider);
+    final isDownloadingThis = downloadProgress?.fileId == entry.id;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -259,12 +260,25 @@ class _FileRow extends ConsumerWidget {
               tooltip: '미리보기',
               visualDensity: VisualDensity.compact,
             ),
-          IconButton(
-            onPressed: () => _download(context, ref),
-            icon: const Icon(Icons.download_outlined, size: 20),
-            tooltip: '다운로드',
-            visualDensity: VisualDensity.compact,
-          ),
+          if (isDownloadingThis)
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  value: downloadProgress!.progress > 0 ? downloadProgress.progress : null,
+                ),
+              ),
+            )
+          else
+            IconButton(
+              onPressed: downloadProgress == null ? () => _download(context, ref) : null,
+              icon: const Icon(Icons.download_outlined, size: 20),
+              tooltip: '다운로드',
+              visualDensity: VisualDensity.compact,
+            ),
           if (canDelete)
             IconButton(
               onPressed: () => _delete(context, ref),

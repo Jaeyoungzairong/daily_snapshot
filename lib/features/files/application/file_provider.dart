@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_provider.dart';
+import '../../../core/utils/file_saver.dart';
 import '../../../core/utils/formatters.dart';
 import '../data/file_entry.dart';
 import '../data/file_mime.dart';
@@ -148,3 +149,36 @@ class FileUploadNotifier extends Notifier<UploadProgress?> {
 }
 
 final fileUploadProvider = NotifierProvider<FileUploadNotifier, UploadProgress?>(FileUploadNotifier.new);
+
+/// 다운로드 중인 파일 ID와 진행률(0.0~1.0). 다운로드 중이 아니면 null. 한 번에 하나만
+/// 다운로드한다고 가정 — fileId로 어느 행이 진행 중인지 UI에서 구분한다.
+class DownloadProgress {
+  const DownloadProgress({required this.fileId, required this.progress});
+  final String fileId;
+  final double progress;
+}
+
+class FileDownloadNotifier extends Notifier<DownloadProgress?> {
+  @override
+  DownloadProgress? build() => null;
+
+  Future<void> download(FileEntry entry) async {
+    final repository = ref.read(fileRepositoryProvider);
+    try {
+      final bytes = await repository.downloadBytes(
+        entry.storagePath,
+        onProgress: (received, total) {
+          state = DownloadProgress(
+            fileId: entry.id,
+            progress: total == null || total == 0 ? 0 : received / total,
+          );
+        },
+      );
+      saveBytes(bytes, fileName: entry.name, mimeType: entry.contentType);
+    } finally {
+      state = null;
+    }
+  }
+}
+
+final fileDownloadProvider = NotifierProvider<FileDownloadNotifier, DownloadProgress?>(FileDownloadNotifier.new);

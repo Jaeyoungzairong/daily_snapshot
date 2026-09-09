@@ -1,7 +1,8 @@
 # Daily Snapshot
 
-매일 아침 확인하는 날씨 · 환율 · 오늘 할일 · 자주 가는 사이트를 한 화면에 모아 보여주는
-Flutter Web 대시보드입니다. 백엔드 서버 없이 정적 사이트로 빌드되어 GitHub Pages에 배포됩니다.
+매일 아침 확인하는 날씨 · 환율 · 오늘 할일 · 공유 파일 · 자주 가는 사이트를 한 화면에 모아
+보여주는 Flutter Web 대시보드입니다. 정적 사이트로 빌드되어 Firebase Hosting에 배포되고,
+로그인·데이터 동기화·파일 저장은 Firebase(Auth/Firestore/Storage)를 사용합니다.
 
 ## 주요 기능
 
@@ -39,6 +40,19 @@ Flutter Web 대시보드입니다. 백엔드 서버 없이 정적 사이트로 �
 ### 바로가기
 - 자주 쓰는 외부 사이트(그룹웨어, 사내 NAS, 지도, 메일, 검색 등)를 아이콘 목록으로 두고 클릭 시 새 탭으로 이동
 
+### 공유 파일함
+- Firebase Storage + Firestore로 파일을 올리고 받는 기능. 계정별 저장소가 아니라 승인된 모든
+  사용자가 함께 쓰는 공유 풀(파일 하나당 최대 100MB, 전체 최대 30개)
+- 오늘 할일/메모와 같은 이메일 링크 로그인 후 이용 가능. 삭제만 관리자(승인 명단의 `isAdmin: true`)로
+  제한하고, 업로드·다운로드·미리보기는 승인된 사용자 누구나 가능
+- 확장자별로 미리보기 가능 여부를 판단해 pdf/이미지/텍스트/mp4/mp3는 "미리보기"(새 탭에서 열기)와
+  "다운로드"(실제 저장)를 아이콘으로 구분 제공. 다운로드는 Storage 버킷 CORS 설정 + 브라우저에서
+  바이트를 직접 받아 Blob으로 저장하는 방식으로, 미리보기 가능한 형식도 정확히 파일로 저장됨
+- 업로드·다운로드 모두 진행률을 표시(대용량 파일에서도 버튼이 응답 없어 보이지 않도록)
+- 여러 파일을 한 번에 선택해 업로드 가능, 일부만 실패해도 나머지는 계속 진행. 이미 같은 이름의
+  파일이 있으면 업로드 전에 확인(취소/중복 제외/그대로 진행 중 선택)
+- 최신 업로드 순 정렬, 현재 개수(n/30)를 상시 표시
+
 ### 화면 테마
 - 앱바 아이콘으로 다크/라이트 테마 전환, 마지막으로 선택한 테마를 저장해 다음 방문 시 그대로 적용
 - 전체 글꼴을 Pretendard(Regular/SemiBold)로 번들링해 플랫폼(기기별 시스템 한글 폰트)에
@@ -47,13 +61,14 @@ Flutter Web 대시보드입니다. 백엔드 서버 없이 정적 사이트로 �
 ## 기술 스택
 - Flutter Web (다른 플랫폼 타깃 없음)
 - 상태 관리: `flutter_riverpod` (`AsyncNotifier`/`StreamNotifier`/`Notifier` 기반)
-- 인증/데이터베이스: `firebase_auth`(이메일 링크 로그인) + `cloud_firestore`(할일/메모 동기화).
-  보안 규칙에서 로그인 승인 명단(`admin_allowed_emails`)을 함께 검증 — 단건 조회(`get`)는 누구나
+- 인증/데이터베이스: `firebase_auth`(이메일 링크 로그인) + `cloud_firestore`(할일/메모/공유 파일함 메타데이터
+  동기화). 보안 규칙에서 로그인 승인 명단(`admin_allowed_emails`)을 함께 검증 — 단건 조회(`get`)는 누구나
   가능하게 열어 로그인 전에도 승인 여부를 미리 확인할 수 있게 하고, 목록 조회(`list`)는 막아 전체
-  승인자 목록이 노출되지 않게 함
+  승인자 목록이 노출되지 않게 함. 같은 문서의 `isAdmin` 필드로 파일 삭제 등 관리자 전용 동작을 구분
+- 파일 저장: `firebase_storage`(공유 파일함 실 파일 저장) + `file_picker`(파일 선택)
 - 로컬 저장소: `shared_preferences` (공통 `KeyValueStore` 추상화로 감싸 테스트에서 인메모리로 대체)
 - 차트: `fl_chart`
-- HTTP: `http`
+- HTTP: `http` (환율/날씨 API 호출 + 공유 파일함 다운로드 스트리밍)
 - 글꼴: [Pretendard](https://github.com/orioncactus/pretendard) (Regular/SemiBold, `assets/fonts/`에 번들링, OFL 라이선스)
 
 ## 프로젝트 구조
@@ -65,6 +80,7 @@ lib/
     weather/       날씨 (기상청 API 연동, 지역 검색, 내 위치로 찾기)
     exchange_rate/ 환율 (실시간 시세 + 히스토리 차트)
     todo/          오늘 할일 / 다중 메모 (로그인 필요, Firestore 동기화)
+    files/         공유 파일함 (Storage 업로드/다운로드/미리보기, 로그인 필요, 삭제는 관리자만)
     shortcuts/     바로가기 링크
     dashboard/     위 카드들을 배치하는 대시보드 페이지
 ```
@@ -101,6 +117,11 @@ flutter run -d chrome --dart-define-from-file=lib/core/config/secrets.json
 > `lib/firebase_options.dart`를 그 프로젝트 설정으로 교체한 뒤, `firestore.rules`를 배포하고
 > 본인 이메일을 승인 명단에 추가해야 합니다.
 
+> 공유 파일함까지 테스트하려면 위 설정에 더해 `storage.rules`도 배포하고, Storage 버킷 설정에서
+> CORS(허용 origin에 로컬 서빙 주소 포함, `GET`, 응답 헤더 `Content-Type`/`Content-Length`)를
+> 켜야 다운로드 진행률·강제 저장이 동작합니다. 파일 삭제까지 테스트하려면 승인 명단 문서에
+> `isAdmin: true`도 추가합니다.
+
 ```bash
 flutter build web --dart-define-from-file=lib/core/config/secrets.json
 dhttpd --path build/web --port 8766
@@ -119,9 +140,16 @@ flutter test
 ```
 
 ## 배포
-`main` 브랜치에 푸시되면 `.github/workflows/deploy.yml`이 `flutter build web`으로 빌드한 뒤
-GitHub Pages에 배포합니다. `KMA_SERVICE_KEY`는 저장소 Settings > Secrets에 등록된 값을
-빌드 시 `--dart-define`으로 주입합니다.
+`main` 브랜치에 push되면 `.github/workflows/deploy-firebase.yml`이 Firebase Hosting
+(`daily-snapshot-3ff12.web.app`)에 자동 배포합니다. 이전에 쓰던
+`.github/workflows/deploy.yml`(GitHub Pages)은 Firebase Hosting 안정성을 지켜보는 동안
+수동 실행(`workflow_dispatch`)으로만 남겨뒀고, 문제가 생기면 트리거를 다시 되돌려 즉시
+롤백할 수 있습니다. 두 워크플로 모두 빌드 단계는 `.github/actions/build-web` 컴포짓
+액션을 공유합니다. `KMA_SERVICE_KEY`는 저장소 Settings > Secrets에 등록된 값을 빌드 시
+`--dart-define`으로 주입합니다.
+
+Firebase Hosting 설정(`firebase.json`)은 SPA 라우팅을 위한 rewrite와, 해시가 붙는 정적
+자산은 영구 캐시하되 `index.html`/서비스워커는 매번 새로 받도록 캐시 헤더를 구분해뒀습니다.
 
 ### 버전 관리
 `pubspec.yaml`의 `version`은 `dev` 브랜치를 `main`에 병합할 때마다 그날 날짜 기준
@@ -134,3 +162,6 @@ GitHub의 Releases 기능으로 같은 버전(`v26.8.31`)의 태그를 남기며
 - 기상청 중기예보(3~10일) 연동 — 현재 사용 중인 서비스 키가 `MidFcstInfoService`에 등록되어 있지
   않아 보류 중
 - 오늘 할일의 이전 기록을 날짜별로 조회하는 기능
+- 공유 파일함(업로드 상한, 중복 파일명 처리, 다운로드 진행률 등)에 대한 자동화 테스트 추가
+- GitHub Pages 배포 경로 완전 정리 — Firebase Hosting 안정성이 충분히 확인되면 제거
+- 관리자(나)만 접근 가능한 개인 파일함 — 공유 파일함과 별도 풀로 검토 중
