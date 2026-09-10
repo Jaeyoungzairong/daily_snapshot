@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_provider.dart';
@@ -15,6 +17,10 @@ const int maxMemoCount = 15;
 /// 메모 한 개의 최대 글자 수. 문서 하나에 모든 메모가 함께 저장되므로, 메모 하나가
 /// 지나치게 길어지는 것도 같은 이유로 제한한다.
 const int maxMemoContentLength = 5000;
+
+/// 메모 제목의 최대 글자 수. 제목은 칩(최대 120~260px)에 표시되며 어차피 그 이상은
+/// 말줄임(ellipsis)으로 잘리므로, 다 보이지도 않을 만큼 길게 쓰는 것을 막는다.
+const int maxMemoTitleLength = 50;
 
 /// 할 일 한 개의 최대 글자 수. 할 일은 짧은 한 줄짜리 작업이 목적이라 메모보다 훨씬
 /// 짧게 제한한다 — 목록 한 항목이 지나치게 길어져 다른 항목들을 밀어내는 것도 방지한다.
@@ -88,23 +94,29 @@ class TodoListNotifier extends StreamNotifier<List<TodoItem>> {
 
 final todoListProvider = StreamNotifierProvider<TodoListNotifier, List<TodoItem>>(TodoListNotifier.new);
 
-/// 미완료 항목을 앞에, 완료 항목(취소선 표시)을 뒤에 두는 화면 표시용 정렬.
-/// 저장 순서(입력한 순서)는 그대로 유지해 이후 이력 조회에 영향을 주지 않는다.
-List<TodoItem> sortedForDisplay(List<TodoItem> items) {
-  final pending = items.where((item) => !item.done);
-  final done = items.where((item) => item.done);
-  return [...pending, ...done];
-}
-
 class TodoMemoNotifier extends StreamNotifier<List<MemoItem>> {
   late final TodoRepository _repository;
 
   // TodoListNotifier와 같은 이유로 타임스탬프에 인스턴스 카운터를 더해 id 충돌을 막는다.
   int _idSequence = 0;
 
+  // 제목/내용 입력을 디바운스해서 저장한다. 위젯(TodoCard)이 아니라 여기(provider)에
+  // 타이머를 두는 이유는, 로그아웃 같은 동작이 위젯의 생명주기와 무관하게(AppBar 등에서)
+  // 트리거될 수 있어도 [flushPending]/[cancelPendingEdits]만 호출하면 되게 하기 위함이다.
+  Timer? _titleDebounce;
+  Timer? _contentDebounce;
+  String? _pendingTitleId;
+  String? _pendingTitleValue;
+  String? _pendingContentId;
+  String? _pendingContentValue;
+
   @override
   Stream<List<MemoItem>> build() {
     _repository = ref.watch(todoRepositoryProvider);
+    ref.onDispose(() {
+      _titleDebounce?.cancel();
+      _contentDebounce?.cancel();
+    });
     return _repository.watchMemos();
   }
 
@@ -160,6 +172,65 @@ class TodoMemoNotifier extends StreamNotifier<List<MemoItem>> {
     updated.insert(newIndex, memo);
     state = AsyncData(updated);
     await _repository.moveMemo(id, delta);
+  }
+
+  /// 제목 입력을 디바운스해서 저장을 예약한다. 즉시 저장이 필요하면 [flushPending]을,
+  /// 다른 메모로 전환해 지금 예약을 버려야 하면 [cancelPendingEdits]를 쓴다.
+  void scheduleRename(String id, String title) {
+    _pendingTitleId = id;
+    _pendingTitleValue = title;
+    _titleDebounce?.cancel();
+    _titleDebounce = Timer(const Duration(milliseconds: 500), () {
+      _pendingTitleId = null;
+      renameMemo(id, title);
+    });
+  }
+
+  void scheduleContent(String id, String content) {
+    _pendingContentId = id;
+    _pendingContentValue = content;
+    _contentDebounce?.cancel();
+    _contentDebounce = Timer(const Duration(milliseconds: 500), () {
+      _pendingContentId = null;
+      updateContent(id, content);
+    });
+  }
+
+  /// 예약된 저장이 있으면 기다리지 않고 즉시 실행한다. 로그아웃 직전처럼, 이후로는
+  /// 저장이 실패할 수 있는 시점에 마지막 편집 내용을 유실하지 않으려고 사용한다.
+  Future<void> flushPending() async {
+    if (_titleDebounce?.isActive ?? false) {
+      _titleDebounce!.cancel();
+      final id = _pendingTitleId;
+      final value = _pendingTitleValue;
+      _pendingTitleId = null;
+      if (id != null && value != null) {
+        try {
+          await renameMemo(id, value);
+        } catch (_) {
+          // 최선을 다한 저장 시도일 뿐이라, 실패해도 호출한 쪽(로그아웃 등)은 계속 진행한다.
+        }
+      }
+    }
+    if (_contentDebounce?.isActive ?? false) {
+      _contentDebounce!.cancel();
+      final id = _pendingContentId;
+      final value = _pendingContentValue;
+      _pendingContentId = null;
+      if (id != null && value != null) {
+        try {
+          await updateContent(id, value);
+        } catch (_) {}
+      }
+    }
+  }
+
+  /// 예약된 저장을 저장하지 않고 취소한다(다른 메모로 전환할 때 사용).
+  void cancelPendingEdits() {
+    _titleDebounce?.cancel();
+    _contentDebounce?.cancel();
+    _pendingTitleId = null;
+    _pendingContentId = null;
   }
 }
 

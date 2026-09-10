@@ -1,6 +1,5 @@
 import 'package:daily_snapshot/features/todo/application/todo_provider.dart';
 import 'package:daily_snapshot/features/todo/data/cloud_list_store.dart';
-import 'package:daily_snapshot/features/todo/data/todo_item.dart';
 import 'package:daily_snapshot/features/todo/data/todo_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -134,26 +133,6 @@ void main() {
     });
   });
 
-  group('sortedForDisplay', () {
-    test('pending items come before done items, each keeping relative order', () {
-      final items = [
-        TodoItem(id: '1', text: 'done first', done: true, createdAt: DateTime(2026, 8, 28)),
-        TodoItem(id: '2', text: 'pending first', done: false, createdAt: DateTime(2026, 8, 28)),
-        TodoItem(id: '3', text: 'done second', done: true, createdAt: DateTime(2026, 8, 28)),
-        TodoItem(id: '4', text: 'pending second', done: false, createdAt: DateTime(2026, 8, 28)),
-      ];
-
-      final sorted = sortedForDisplay(items);
-
-      expect(sorted.map((e) => e.text), [
-        'pending first',
-        'pending second',
-        'done first',
-        'done second',
-      ]);
-    });
-  });
-
   group('todoMemoProvider', () {
     test('starts empty and addMemo() appends a titled, blank memo', () async {
       final container = _makeContainer();
@@ -199,6 +178,48 @@ void main() {
       final memos = container.read(todoMemoProvider).value!;
       expect(memos, hasLength(1));
       expect(memos.first.title, '새 메모');
+    });
+
+    test('scheduleRename()/scheduleContent() save automatically after the debounce delay', () async {
+      final container = _makeContainer();
+      await container.read(todoMemoProvider.future);
+      final notifier = container.read(todoMemoProvider.notifier);
+      final memo = (await notifier.addMemo())!;
+
+      notifier.scheduleRename(memo.id, '디바운스 제목');
+      notifier.scheduleContent(memo.id, '디바운스 내용');
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+
+      final updated = container.read(todoMemoProvider).value!.first;
+      expect(updated.title, '디바운스 제목');
+      expect(updated.content, '디바운스 내용');
+    });
+
+    test('flushPending() saves a scheduled edit immediately without waiting for the debounce', () async {
+      final container = _makeContainer();
+      await container.read(todoMemoProvider.future);
+      final notifier = container.read(todoMemoProvider.notifier);
+      final memo = (await notifier.addMemo())!;
+
+      notifier.scheduleRename(memo.id, '즉시 저장 제목');
+      await notifier.flushPending();
+
+      final updated = container.read(todoMemoProvider).value!.first;
+      expect(updated.title, '즉시 저장 제목');
+    });
+
+    test('cancelPendingEdits() discards a scheduled edit instead of saving it', () async {
+      final container = _makeContainer();
+      await container.read(todoMemoProvider.future);
+      final notifier = container.read(todoMemoProvider.notifier);
+      final memo = (await notifier.addMemo())!;
+
+      notifier.scheduleContent(memo.id, '버려질 내용');
+      notifier.cancelPendingEdits();
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+
+      final updated = container.read(todoMemoProvider).value!.first;
+      expect(updated.content, '');
     });
   });
 }
