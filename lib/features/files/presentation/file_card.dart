@@ -9,6 +9,7 @@ import '../../../core/utils/url_opener.dart';
 import '../../../core/widgets/confirm_dialog.dart';
 import '../../../core/widgets/dashboard_card.dart';
 import '../../../core/widgets/loading_error_view.dart';
+import '../../../core/widgets/signed_out_placeholder.dart';
 import '../application/file_provider.dart';
 import '../data/file_entry.dart';
 import '../data/file_mime.dart';
@@ -33,13 +34,17 @@ const Map<String, IconData> _iconByExtension = {
   'mp3': Icons.audiotrack_outlined,
 };
 
-IconData _iconFor(String? extension) => _iconByExtension[extension?.toLowerCase()] ?? Icons.insert_drive_file_outlined;
+IconData _iconFor(String? extension) =>
+    _iconByExtension[extension?.toLowerCase()] ?? Icons.insert_drive_file_outlined;
 
 enum _DuplicateChoice { cancel, skipDuplicates, uploadAnyway }
 
 /// 이미 목록에 같은 이름의 파일이 있을 때 어떻게 할지 묻는다. 무조건 막거나(관리자 아니면
 /// 재업로드할 방법이 없어짐) 조용히 이름을 바꾸지 않고, 판단을 사용자에게 맡긴다.
-Future<_DuplicateChoice> _confirmDuplicateNames(BuildContext context, List<String> duplicateNames) async {
+Future<_DuplicateChoice> _confirmDuplicateNames(
+  BuildContext context,
+  List<String> duplicateNames,
+) async {
   final choice = await showDialog<_DuplicateChoice>(
     context: context,
     builder: (context) => AlertDialog(
@@ -79,12 +84,7 @@ class FileCard extends ConsumerWidget {
       child: authState.when(
         loading: () => const LoadingView(),
         error: (error, _) => ErrorView(message: error.toString()),
-        data: (uid) => uid == null
-            ? Text(
-                '로그인 후 이용할 수 있습니다. "할 일" 카드에서 먼저 로그인해주세요.',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
-              )
-            : const _FileListSection(),
+        data: (uid) => uid == null ? const SignedOutPlaceholder() : const _FileListSection(),
       ),
     );
   }
@@ -116,13 +116,16 @@ class _FileListSection extends ConsumerWidget {
       if (!context.mounted || !result.hasFailures) return;
       final summary = result.failures.map((f) => '${f.fileName}: ${f.reason}').join(', ');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${filesToUpload.length}개 중 ${result.succeededCount}개 업로드 완료 · 실패: $summary')),
+        SnackBar(
+          content: Text(
+            '${filesToUpload.length}개 중 ${result.succeededCount}개 업로드 완료 · 실패: $summary',
+          ),
+        ),
       );
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('업로드 중 문제가 발생했습니다: $error')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('업로드 중 문제가 발생했습니다: $error')));
     }
   }
 
@@ -132,6 +135,7 @@ class _FileListSection extends ConsumerWidget {
     final filesAsync = ref.watch(filesProvider);
     final uploadProgress = ref.watch(fileUploadProvider);
     final isAdmin = ref.watch(isAdminProvider).value ?? false;
+    final currentEmail = ref.watch(authEmailProvider).value;
     final fileCount = filesAsync.value?.length ?? 0;
     final captionStyle = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline);
 
@@ -150,7 +154,11 @@ class _FileListSection extends ConsumerWidget {
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    for (final entry in files) _FileRow(entry: entry, canDelete: isAdmin),
+                    for (final entry in files)
+                      _FileRow(
+                        entry: entry,
+                        canDelete: isAdmin || entry.uploadedByEmail == currentEmail,
+                      ),
                   ],
                 ),
               ),
@@ -162,7 +170,7 @@ class _FileListSection extends ConsumerWidget {
           Text(
             uploadProgress.total > 1
                 ? '(${uploadProgress.index}/${uploadProgress.total}) ${uploadProgress.fileName} 업로드 중… '
-                    '${(uploadProgress.progress * 100).round()}%'
+                      '${(uploadProgress.progress * 100).round()}%'
                 : '${uploadProgress.fileName} 업로드 중… ${(uploadProgress.progress * 100).round()}%',
             style: theme.textTheme.bodySmall,
           ),
@@ -174,9 +182,13 @@ class _FileListSection extends ConsumerWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: theme.colorScheme.primary,
+                side: BorderSide(color: theme.colorScheme.primary),
+              ),
               onPressed: uploadProgress == null ? () => _pickAndUpload(context, ref) : null,
               icon: const Icon(Icons.upload_file),
-              label: const Text('파일 추가'),
+              label: const Text('파일 업로드'),
             ),
             Text('$fileCount/$maxFileCount개', style: captionStyle),
           ],
@@ -202,9 +214,8 @@ class _FileRow extends ConsumerWidget {
       await ref.read(fileDownloadProvider.notifier).download(entry);
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('다운로드 중 문제가 발생했습니다: $error')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('다운로드 중 문제가 발생했습니다: $error')));
     }
   }
 
@@ -219,9 +230,8 @@ class _FileRow extends ConsumerWidget {
       await ref.read(fileRepositoryProvider).deleteFile(entry);
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('삭제 중 문제가 발생했습니다: $error')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('삭제 중 문제가 발생했습니다: $error')));
     }
   }
 
@@ -243,7 +253,12 @@ class _FileRow extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodyMedium),
+                Text(
+                  entry.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium,
+                ),
                 Text(
                   '${Formatters.fileSize(entry.sizeBytes)} · ${entry.uploadedByEmail} · ${Formatters.dateTime(entry.uploadedAt)}',
                   maxLines: 1,
@@ -279,13 +294,21 @@ class _FileRow extends ConsumerWidget {
               tooltip: '다운로드',
               visualDensity: VisualDensity.compact,
             ),
-          if (canDelete)
-            IconButton(
+          // 행마다 삭제 가능 여부가 달라 아이콘 개수가 들쭉날쭉하면 다운로드 아이콘 위치가
+          // 행마다 어긋나 보인다. canDelete가 아닐 때도 자리만 그대로 차지하게 해서
+          // (Visibility maintainSize) 아이콘 열이 항상 나란히 정렬되게 한다.
+          Visibility(
+            visible: canDelete,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: IconButton(
               onPressed: () => _delete(context, ref),
               icon: const Icon(Icons.delete_outline, size: 20),
               tooltip: '삭제',
               visualDensity: VisualDensity.compact,
             ),
+          ),
         ],
       ),
     );

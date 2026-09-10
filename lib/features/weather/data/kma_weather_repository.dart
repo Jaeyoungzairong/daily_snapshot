@@ -215,6 +215,13 @@ WeatherModel buildWeatherModel({
     ));
   }
 
+  // 기상청이 드물게 빈 응답을 줄 때(점검/일시 장애 등) 아래 필드들이 없을 수 있다.
+  // Null 체크 연산자(!)나 dailyForecast.first를 그대로 쓰면 "Bad state: No element" 같은
+  // 개발자용 문구가 그대로 화면에 노출되므로, 여기서 미리 걸러 안내 문구로 바꾼다.
+  if (dailyForecast.isEmpty || currentByCategory['T1H'] == null || currentByCategory['WSD'] == null) {
+    throw ApiException('기상청 응답이 비어 있습니다. 잠시 후 다시 시도해주세요.');
+  }
+
   // 현재 날씨: 초단기실황(기온 T1H, 풍속 WSD, 강수형태 PTY)에 단기예보의 같은 시각
   // 하늘상태(SKY)를 더한다 — 초단기실황은 하늘상태를 안 주기 때문.
   final currentPty = int.tryParse(currentByCategory['PTY'] ?? '') ?? 0;

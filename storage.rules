@@ -5,7 +5,10 @@ service firebase.storage {
     // 공유 파일함 실 파일. Firestore의 admin_allowed_emails 문서를 그대로 교차 조회해서
     // Firestore 규칙(firestore.rules)과 같은 조건을 유지한다 — 승인된 사용자 전원이
     // 읽고(다운로드) 100MB 이하로 새로 올릴 수 있고(업로드), 삭제는 isAdmin:true인
-    // 사용자만 할 수 있다.
+    // 사용자 전체 또는 본인이 올린 파일만 할 수 있다. Storage 객체 자체엔 업로더 정보가
+    // 없어서, shared_files/{fileId} Firestore 문서를 교차 조회해 uploadedByEmail을
+    // 비교한다 — deleteFile()이 Storage를 먼저 지우고 Firestore 문서를 나중에 지우므로
+    // (file_repository.dart) 이 시점엔 문서가 항상 남아있다.
     match /shared_files/{fileId}/{fileName} {
       allow read: if request.auth != null
         && request.auth.token.email_verified == true
@@ -16,8 +19,10 @@ service firebase.storage {
         && firestore.get(/databases/(default)/documents/admin_allowed_emails/$(request.auth.token.email)).data.isActive == true
         && request.resource.size <= 100 * 1024 * 1024;
 
-      allow delete: if request.auth != null
-        && firestore.get(/databases/(default)/documents/admin_allowed_emails/$(request.auth.token.email)).data.isAdmin == true;
+      allow delete: if request.auth != null && (
+        firestore.get(/databases/(default)/documents/admin_allowed_emails/$(request.auth.token.email)).data.isAdmin == true
+        || firestore.get(/databases/(default)/documents/shared_files/$(fileId)).data.uploadedByEmail == request.auth.token.email
+      );
     }
   }
 }
