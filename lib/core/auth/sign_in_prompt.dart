@@ -141,11 +141,13 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
     final borderSide = BorderSide(color: theme.colorScheme.outlineVariant);
     return InputDecoration(
       labelText: label,
-      prefixIcon: const Icon(Icons.mail_outline),
       filled: true,
       fillColor: theme.colorScheme.surfaceContainerHighest,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: borderSide),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: borderSide),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: borderSide,
+      ),
     );
   }
 
@@ -155,12 +157,10 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
   /// 글자라 얇아 보이는 착시가 있어 SemiBold로 보정하고, 라이트모드는 이미 진한 배경
   /// 위 흰 글자라 또렷해서 기본 굵기(Regular)를 그대로 쓴다.
   ButtonStyle _buttonShape(ThemeData theme) => FilledButton.styleFrom(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        minimumSize: const Size.fromHeight(52),
-        textStyle: TextStyle(
-          fontWeight: theme.brightness == Brightness.dark ? FontWeight.w600 : null,
-        ),
-      );
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    minimumSize: const Size.fromHeight(48),
+    textStyle: TextStyle(fontWeight: theme.brightness == Brightness.dark ? FontWeight.w600 : null),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -199,7 +199,7 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
               style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
@@ -250,7 +250,7 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
           ),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
         SizedBox(
           width: double.infinity,
           child: FilledButton(

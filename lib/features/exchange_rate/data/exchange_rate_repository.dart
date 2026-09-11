@@ -21,8 +21,9 @@ class ExchangeRateRepository {
 
   Future<List<CurrencyKrwRate>> fetchLatestRates() async {
     final json = await _apiClient.getJson(_latestUri);
-    final rates = (json['rates'] as Map<String, dynamic>)
-        .map((key, value) => MapEntry(key, (value as num).toDouble()));
+    final rates = (json['rates'] as Map<String, dynamic>).map(
+      (key, value) => MapEntry(key, (value as num).toDouble()),
+    );
     final updatedAt = DateTime.fromMillisecondsSinceEpoch(
       (json['time_last_update_unix'] as num).toInt() * 1000,
       isUtc: true,
@@ -44,9 +45,8 @@ class ExchangeRateRepository {
     final start = end.subtract(Duration(days: days));
 
     final symbols = currency.code == _pivot ? 'KRW' : '${currency.code},KRW';
-    final uri = Uri.parse('$_historyBaseUrl/${Formatters.date(start)}..${Formatters.date(end)}').replace(
-      queryParameters: {'base': _pivot, 'symbols': symbols},
-    );
+    final uri = Uri.parse('$_historyBaseUrl/${Formatters.date(start)}..${Formatters.date(end)}')
+        .replace(queryParameters: {'base': _pivot, 'symbols': symbols});
     final json = await _apiClient.getJson(uri);
 
     return ExchangeRateHistoryPoint.fromPivotRatesByDate(

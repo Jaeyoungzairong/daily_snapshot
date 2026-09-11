@@ -22,7 +22,11 @@ class KmaBaseTime {
       }
     }
     // safeNow가 새벽 2시 이전 → 아직 오늘 첫 발표(02시) 전이므로 전날 23시 발표분을 쓴다.
-    final prevDay = DateTime(safeNow.year, safeNow.month, safeNow.day).subtract(const Duration(days: 1));
+    final prevDay = DateTime(
+      safeNow.year,
+      safeNow.month,
+      safeNow.day,
+    ).subtract(const Duration(days: 1));
     return (baseDate: _formatDate(prevDay), baseTime: '2300');
   }
 

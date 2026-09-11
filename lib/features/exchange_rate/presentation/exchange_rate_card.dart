@@ -46,9 +46,9 @@ class _ExchangeRateCardState extends ConsumerState<ExchangeRateCard> with Widget
 
   void _refreshRates() {
     ref.invalidate(latestRatesProvider);
-    ref.invalidate(chartHistoryProvider(
-      (ref.read(selectedCurrencyProvider), ref.read(chartPeriodProvider)),
-    ));
+    ref.invalidate(
+      chartHistoryProvider((ref.read(selectedCurrencyProvider), ref.read(chartPeriodProvider))),
+    );
   }
 
   @override
@@ -80,9 +80,7 @@ class _ExchangeRateCardState extends ConsumerState<ExchangeRateCard> with Widget
         // 필드 자체는 짧은 코드("USD") 기준으로 자동으로 좁게 잡히게 두고, 펼쳤을 때 나오는
         // 메뉴만 menuStyle로 따로 넓혀서 "USD · 미국 달러" 같은 전체 이름이 줄바꿈 없이 보이게 한다.
         textStyle: theme.textTheme.bodyMedium,
-        menuStyle: const MenuStyle(
-          minimumSize: WidgetStatePropertyAll(Size(190, 0)),
-        ),
+        menuStyle: const MenuStyle(minimumSize: WidgetStatePropertyAll(Size(190, 0))),
         trailingIcon: const Icon(Icons.expand_more, size: 20),
         selectedTrailingIcon: const Icon(Icons.expand_less, size: 20),
         dropdownMenuEntries: [
@@ -143,23 +141,19 @@ class _SelectedRateHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final unitLabel = rate.currency.unit == 1 ? '1 ${rate.currency.code}' : '${rate.currency.unit} ${rate.currency.code}';
+    final unitLabel = rate.currency.unit == 1
+        ? '1 ${rate.currency.code}'
+        : '${rate.currency.unit} ${rate.currency.code}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '기준일: ${rate.date} · 원화(KRW) 기준',
-          style: theme.textTheme.bodySmall,
-        ),
+        Text('기준일: ${rate.date} · 원화(KRW) 기준', style: theme.textTheme.bodySmall),
         const SizedBox(height: 8),
         Row(
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(
-              '$unitLabel (${rate.currency.displayName})',
-              style: theme.textTheme.bodyLarge,
-            ),
+            Text('$unitLabel (${rate.currency.displayName})', style: theme.textTheme.bodyLarge),
             const Spacer(),
             Text(
               '${Formatters.amount(rate.krwValue)}원',
@@ -204,12 +198,7 @@ class _Converter extends StatelessWidget {
         const SizedBox(width: 12),
         const Icon(Icons.arrow_forward, size: 18),
         const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            '${Formatters.amount(krwResult)}원',
-            style: theme.textTheme.bodyLarge,
-          ),
-        ),
+        Expanded(child: Text('${Formatters.amount(krwResult)}원', style: theme.textTheme.bodyLarge)),
       ],
     );
   }

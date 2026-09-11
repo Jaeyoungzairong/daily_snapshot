@@ -15,10 +15,7 @@ class WeatherModel {
 
   /// Open-Meteo forecast API 응답 파싱. 현재는 사용하지 않는 OpenMeteoWeatherRepository
   /// (기상청으로 교체됨, 추후 재사용 대비 보존) 전용이다.
-  factory WeatherModel.fromJson({
-    required String cityName,
-    required Map<String, dynamic> json,
-  }) {
+  factory WeatherModel.fromJson({required String cityName, required Map<String, dynamic> json}) {
     final current = json['current'] as Map<String, dynamic>;
     final daily = json['daily'] as Map<String, dynamic>;
     final hourly = json['hourly'] as Map<String, dynamic>;
@@ -49,19 +46,24 @@ class WeatherModel {
     final hourlyForecast = <HourlyForecast>[];
     for (var i = 0; i < hourTimes.length; i++) {
       final time = DateTime.parse(hourTimes[i]);
-      final isToday = time.year == currentTime.year &&
+      final isToday =
+          time.year == currentTime.year &&
           time.month == currentTime.month &&
           time.day == currentTime.day;
-      final isPast = time.isBefore(DateTime(currentTime.year, currentTime.month, currentTime.day, currentTime.hour));
+      final isPast = time.isBefore(
+        DateTime(currentTime.year, currentTime.month, currentTime.day, currentTime.hour),
+      );
       if (isToday && !isPast) {
-        hourlyForecast.add(HourlyForecast(
-          time: time,
-          temperature: hourTemps[i].toDouble(),
-          condition: WeatherCondition.fromWmoCode(hourCodes[i].toInt()),
-          isNow: time.hour == currentTime.hour,
-          precipitationProbability: hourPops[i].toInt(),
-          precipitationAmount: _formatMillimeters(hourPrecips[i]),
-        ));
+        hourlyForecast.add(
+          HourlyForecast(
+            time: time,
+            temperature: hourTemps[i].toDouble(),
+            condition: WeatherCondition.fromWmoCode(hourCodes[i].toInt()),
+            isNow: time.hour == currentTime.hour,
+            precipitationProbability: hourPops[i].toInt(),
+            precipitationAmount: _formatMillimeters(hourPrecips[i]),
+          ),
+        );
       }
     }
 

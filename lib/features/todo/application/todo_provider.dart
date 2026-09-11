@@ -92,7 +92,9 @@ class TodoListNotifier extends StreamNotifier<List<TodoItem>> {
   }
 }
 
-final todoListProvider = StreamNotifierProvider<TodoListNotifier, List<TodoItem>>(TodoListNotifier.new);
+final todoListProvider = StreamNotifierProvider<TodoListNotifier, List<TodoItem>>(
+  TodoListNotifier.new,
+);
 
 class TodoMemoNotifier extends StreamNotifier<List<MemoItem>> {
   late final TodoRepository _repository;
@@ -234,4 +236,6 @@ class TodoMemoNotifier extends StreamNotifier<List<MemoItem>> {
   }
 }
 
-final todoMemoProvider = StreamNotifierProvider<TodoMemoNotifier, List<MemoItem>>(TodoMemoNotifier.new);
+final todoMemoProvider = StreamNotifierProvider<TodoMemoNotifier, List<MemoItem>>(
+  TodoMemoNotifier.new,
+);

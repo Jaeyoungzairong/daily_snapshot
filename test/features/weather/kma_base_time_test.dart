@@ -35,10 +35,13 @@ void main() {
       expect(result.baseTime, '0500');
     });
 
-    test('falls back to the previous day 23:00 slot before today\'s first (02:00) slot publishes', () {
-      final result = KmaBaseTime.vilageFcst(DateTime(2026, 8, 28, 1, 30));
-      expect(result.baseDate, '20260827');
-      expect(result.baseTime, '2300');
-    });
+    test(
+      'falls back to the previous day 23:00 slot before today\'s first (02:00) slot publishes',
+      () {
+        final result = KmaBaseTime.vilageFcst(DateTime(2026, 8, 28, 1, 30));
+        expect(result.baseDate, '20260827');
+        expect(result.baseTime, '2300');
+      },
+    );
   });
 }

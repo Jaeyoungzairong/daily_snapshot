@@ -117,10 +117,7 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
           ),
           if (_query.isNotEmpty) ...[
             const SizedBox(height: 12),
-            _CitySearchResults(
-              query: _query,
-              onSelect: _selectCity,
-            ),
+            _CitySearchResults(query: _query, onSelect: _selectCity),
           ],
           const SizedBox(height: 16),
           weatherAsync.when(
@@ -132,10 +129,7 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
             data: (weather) => Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  weather.cityName,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
+                Text(weather.cityName, style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -143,15 +137,11 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
                     const SizedBox(width: 12),
                     Text(
                       Formatters.temperature(weather.currentTemp),
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(width: 12),
-                    Text(
-                      weather.description,
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
+                    Text(weather.description, style: Theme.of(context).textTheme.bodyLarge),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -294,7 +284,9 @@ class _HourlyForecastRow extends StatelessWidget {
                 if (hour.precipitationAmount != null)
                   Text(
                     hour.precipitationAmount!,
-                    style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -335,10 +327,7 @@ class _CitySearchResults extends ConsumerWidget {
         ),
         data: (results) {
           if (results.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('검색 결과가 없습니다.'),
-            );
+            return const Padding(padding: EdgeInsets.all(16), child: Text('검색 결과가 없습니다.'));
           }
           return ListView.separated(
             shrinkWrap: true,
@@ -350,9 +339,10 @@ class _CitySearchResults extends ConsumerWidget {
                 dense: true,
                 title: Text(candidate.name),
                 subtitle: Text(
-                  [candidate.admin1, candidate.country]
-                      .where((e) => e != null && e.isNotEmpty)
-                      .join(', '),
+                  [
+                    candidate.admin1,
+                    candidate.country,
+                  ].where((e) => e != null && e.isNotEmpty).join(', '),
                 ),
                 onTap: () => onSelect(candidate),
               );

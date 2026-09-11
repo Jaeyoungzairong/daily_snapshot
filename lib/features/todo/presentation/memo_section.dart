@@ -45,13 +45,20 @@ class MemoSection extends StatelessWidget {
       final createdText = Formatters.dateTime(memos[selectedIndex].createdAt);
       final updatedText = Formatters.dateTime(memos[selectedIndex].updatedAt);
       // 만든 뒤 한 번도 안 고쳤으면 생성 시각 하나만, 고쳤으면 화살표로 이어서 한 줄에.
-      timelineLabel = createdText == updatedText ? '생성 $createdText' : '생성 $createdText → 수정 $updatedText';
+      timelineLabel = createdText == updatedText
+          ? '생성 $createdText'
+          : '생성 $createdText → 수정 $updatedText';
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _MemoChipWrap(memos: memos, selectedMemoId: selectedMemoId, onSelect: onSelect, onAdd: onAdd),
+        _MemoChipWrap(
+          memos: memos,
+          selectedMemoId: selectedMemoId,
+          onSelect: onSelect,
+          onAdd: onAdd,
+        ),
         const SizedBox(height: 16),
         if (hasSelection) ...[
           Row(
@@ -61,7 +68,11 @@ class MemoSection extends StatelessWidget {
                   controller: titleController,
                   style: theme.textTheme.titleSmall,
                   maxLength: maxMemoTitleLength,
-                  decoration: const InputDecoration(labelText: '제목', isDense: true, counterText: ''),
+                  decoration: const InputDecoration(
+                    labelText: '제목',
+                    isDense: true,
+                    counterText: '',
+                  ),
                   onChanged: onTitleChanged,
                 ),
               ),
@@ -213,12 +224,18 @@ class _MemoChip extends StatelessWidget {
               Container(
                 width: 6,
                 height: 6,
-                decoration: BoxDecoration(color: labelColor.withValues(alpha: 0.6), shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: labelColor.withValues(alpha: 0.6),
+                  shape: BoxShape.circle,
+                ),
               ),
             ],
           ],
         ),
-        labelStyle: TextStyle(color: labelColor, fontWeight: selected ? FontWeight.w600 : FontWeight.w400),
+        labelStyle: TextStyle(
+          color: labelColor,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+        ),
         showCheckmark: false,
         visualDensity: VisualDensity.compact,
         selected: selected,

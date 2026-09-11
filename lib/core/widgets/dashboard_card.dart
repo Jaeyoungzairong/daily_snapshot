@@ -30,16 +30,11 @@ class DashboardCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                if (icon != null) ...[
-                  Icon(icon, color: iconColor),
-                  const SizedBox(width: 8),
-                ],
+                if (icon != null) ...[Icon(icon, color: iconColor), const SizedBox(width: 8)],
                 Expanded(
                   child: Text(
                     title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),
                 ?trailing,

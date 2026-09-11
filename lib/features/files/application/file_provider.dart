@@ -10,7 +10,7 @@ import '../data/file_repository.dart';
 
 /// Storage 용량을 무한정 차지하지 않도록 개수와 파일 하나당 용량에 상한을 둔다.
 const int maxFileCount = 30;
-const int maxFileSizeBytes = 100 * 1024 * 1024;
+const int maxFileSizeBytes = 150 * 1024 * 1024;
 
 /// 여러 파일을 한 번에 올릴 때 실패한 파일 하나의 정보.
 class UploadFailure {
@@ -73,7 +73,9 @@ class FileUploadNotifier extends Notifier<UploadProgress?> {
       for (var i = 0; i < files.length; i++) {
         final file = files[i];
         if (count >= maxFileCount) {
-          failures.add(UploadFailure(fileName: file.name, reason: '파일은 최대 $maxFileCount개까지 올릴 수 있습니다.'));
+          failures.add(
+            UploadFailure(fileName: file.name, reason: '파일은 최대 $maxFileCount개까지 올릴 수 있습니다.'),
+          );
           continue;
         }
 
@@ -102,7 +104,12 @@ class FileUploadNotifier extends Notifier<UploadProgress?> {
             continue;
           }
 
-          state = UploadProgress(fileName: file.name, progress: 0, index: i + 1, total: files.length);
+          state = UploadProgress(
+            fileName: file.name,
+            progress: 0,
+            index: i + 1,
+            total: files.length,
+          );
           final upload = repository.startUpload(
             name: file.name,
             bytes: bytes,
@@ -148,7 +155,9 @@ class FileUploadNotifier extends Notifier<UploadProgress?> {
   }
 }
 
-final fileUploadProvider = NotifierProvider<FileUploadNotifier, UploadProgress?>(FileUploadNotifier.new);
+final fileUploadProvider = NotifierProvider<FileUploadNotifier, UploadProgress?>(
+  FileUploadNotifier.new,
+);
 
 /// 다운로드 중인 파일 ID와 진행률(0.0~1.0). 다운로드 중이 아니면 null. 한 번에 하나만
 /// 다운로드한다고 가정 — fileId로 어느 행이 진행 중인지 UI에서 구분한다.
@@ -181,4 +190,6 @@ class FileDownloadNotifier extends Notifier<DownloadProgress?> {
   }
 }
 
-final fileDownloadProvider = NotifierProvider<FileDownloadNotifier, DownloadProgress?>(FileDownloadNotifier.new);
+final fileDownloadProvider = NotifierProvider<FileDownloadNotifier, DownloadProgress?>(
+  FileDownloadNotifier.new,
+);

@@ -3,11 +3,7 @@ import 'currency_catalog.dart';
 /// 특정 통화의 "현재" 원화 환율. [krwValue]는 이미 [currency.unit] 단위로 환산되어 있다.
 /// 예: JPY는 unit=100이므로 krwValue는 "100엔당 원화" 값이다.
 class CurrencyKrwRate {
-  const CurrencyKrwRate({
-    required this.currency,
-    required this.krwValue,
-    required this.date,
-  });
+  const CurrencyKrwRate({required this.currency, required this.krwValue, required this.date});
 
   final CurrencyInfo currency;
   final double krwValue;
@@ -22,22 +18,17 @@ class CurrencyKrwRate {
   }) {
     final krwPerPivot = pivotRates['KRW']!;
     return CurrencyCatalog.targetCurrencies.map((currency) {
-      final krwPerUnit = currency.code == pivotCode ? krwPerPivot : krwPerPivot / pivotRates[currency.code]!;
-      return CurrencyKrwRate(
-        currency: currency,
-        krwValue: krwPerUnit * currency.unit,
-        date: date,
-      );
+      final krwPerUnit = currency.code == pivotCode
+          ? krwPerPivot
+          : krwPerPivot / pivotRates[currency.code]!;
+      return CurrencyKrwRate(currency: currency, krwValue: krwPerUnit * currency.unit, date: date);
     }).toList();
   }
 }
 
 /// 그래프용 시계열 한 점. krwValue는 [CurrencyKrwRate]와 동일하게 unit 환산이 끝난 값이다.
 class ExchangeRateHistoryPoint {
-  const ExchangeRateHistoryPoint({
-    required this.date,
-    required this.krwValue,
-  });
+  const ExchangeRateHistoryPoint({required this.date, required this.krwValue});
 
   final DateTime date;
   final double krwValue;
@@ -50,10 +41,13 @@ class ExchangeRateHistoryPoint {
     required String pivotCode,
   }) {
     final points = ratesByDate.entries.map((entry) {
-      final dayRates = (entry.value as Map<String, dynamic>)
-          .map((key, value) => MapEntry(key, (value as num).toDouble()));
+      final dayRates = (entry.value as Map<String, dynamic>).map(
+        (key, value) => MapEntry(key, (value as num).toDouble()),
+      );
       final krwPerPivot = dayRates['KRW']!;
-      final krwPerUnit = currency.code == pivotCode ? krwPerPivot : krwPerPivot / dayRates[currency.code]!;
+      final krwPerUnit = currency.code == pivotCode
+          ? krwPerPivot
+          : krwPerPivot / dayRates[currency.code]!;
       return ExchangeRateHistoryPoint(
         date: DateTime.parse(entry.key),
         krwValue: krwPerUnit * currency.unit,

@@ -1,9 +1,5 @@
 class CurrencyInfo {
-  const CurrencyInfo({
-    required this.code,
-    required this.displayName,
-    this.unit = 1,
-  });
+  const CurrencyInfo({required this.code, required this.displayName, this.unit = 1});
 
   /// ISO 4217 통화 코드 (예: USD, CNY, JPY)
   final String code;

@@ -9,8 +9,8 @@ import 'weather_repository.dart';
 /// 전세계 어디든 조회 가능하다는 게 기상청 대비 장점이다.
 class OpenMeteoWeatherRepository implements WeatherRepository {
   OpenMeteoWeatherRepository({ApiClient? apiClient, CityGeocodingService? geocodingService})
-      : _apiClient = apiClient ?? ApiClient(),
-        _geocodingService = geocodingService ?? CityGeocodingService(apiClient: apiClient);
+    : _apiClient = apiClient ?? ApiClient(),
+      _geocodingService = geocodingService ?? CityGeocodingService(apiClient: apiClient);
 
   final ApiClient _apiClient;
   final CityGeocodingService _geocodingService;
@@ -24,15 +24,17 @@ class OpenMeteoWeatherRepository implements WeatherRepository {
 
   @override
   Future<WeatherModel> fetchWeather(CityCandidate city) async {
-    final forecastUri = _forecastBase.replace(queryParameters: {
-      'latitude': city.latitude.toString(),
-      'longitude': city.longitude.toString(),
-      'current': 'temperature_2m,weather_code,wind_speed_10m,precipitation',
-      'hourly': 'temperature_2m,weather_code,precipitation_probability,precipitation',
-      'daily': 'temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max',
-      'forecast_days': '7',
-      'timezone': 'auto',
-    });
+    final forecastUri = _forecastBase.replace(
+      queryParameters: {
+        'latitude': city.latitude.toString(),
+        'longitude': city.longitude.toString(),
+        'current': 'temperature_2m,weather_code,wind_speed_10m,precipitation',
+        'hourly': 'temperature_2m,weather_code,precipitation_probability,precipitation',
+        'daily': 'temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max',
+        'forecast_days': '7',
+        'timezone': 'auto',
+      },
+    );
     final forecastJson = await _apiClient.getJson(forecastUri);
 
     return WeatherModel.fromJson(cityName: city.displayLabel, json: forecastJson);

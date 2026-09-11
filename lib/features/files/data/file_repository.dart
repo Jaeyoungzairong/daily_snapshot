@@ -19,14 +19,17 @@ class FileRepository {
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
 
-  CollectionReference<Map<String, dynamic>> get _collection => _firestore.collection('shared_files');
+  CollectionReference<Map<String, dynamic>> get _collection =>
+      _firestore.collection('shared_files');
 
   /// 최신 파일이 위로 오도록 내림차순 정렬한다.
   Stream<List<FileEntry>> watchFiles() {
     return _collection
         .orderBy('uploadedAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => FileEntry.fromJson(doc.id, doc.data())).toList());
+        .map(
+          (snapshot) => snapshot.docs.map((doc) => FileEntry.fromJson(doc.id, doc.data())).toList(),
+        );
   }
 
   /// 새 문서 ID를 미리 발급하고, 그 ID를 폴더처럼 쓰는 Storage 경로(shared_files/{문서ID}/
@@ -42,7 +45,9 @@ class FileRepository {
   }) {
     final docId = _collection.doc().id;
     final storagePath = 'shared_files/$docId/$name';
-    final task = _storage.ref(storagePath).putData(bytes, SettableMetadata(contentType: contentType));
+    final task = _storage
+        .ref(storagePath)
+        .putData(bytes, SettableMetadata(contentType: contentType));
     return (docId: docId, storagePath: storagePath, task: task);
   }
 

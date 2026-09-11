@@ -29,7 +29,9 @@ const Map<String, _FileTypeInfo> _fileTypes = {
   'xls': _FileTypeInfo('application/vnd.ms-excel'),
   'xlsx': _FileTypeInfo('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
   'ppt': _FileTypeInfo('application/vnd.ms-powerpoint'),
-  'pptx': _FileTypeInfo('application/vnd.openxmlformats-officedocument.presentationml.presentation'),
+  'pptx': _FileTypeInfo(
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ),
   'mp4': _FileTypeInfo('video/mp4', previewable: true),
   'mp3': _FileTypeInfo('audio/mpeg', previewable: true),
 };
