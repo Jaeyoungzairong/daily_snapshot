@@ -27,11 +27,7 @@ class ErrorView extends StatelessWidget {
         children: [
           Icon(Icons.error_outline, color: theme.colorScheme.error, size: 32),
           const SizedBox(height: 8),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium,
-          ),
+          Text(message, textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
           if (onRetry != null) ...[
             const SizedBox(height: 12),
             OutlinedButton(onPressed: onRetry, child: const Text('다시 시도')),

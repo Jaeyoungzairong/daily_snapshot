@@ -50,11 +50,15 @@ class _FakeWeatherRepository extends WeatherRepository {
 }
 
 void main() {
-  testWidgets('WeatherCard renders without overflow when every slot has precipitation data', (tester) async {
+  testWidgets('WeatherCard renders without overflow when every slot has precipitation data', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [weatherRepositoryProvider.overrideWithValue(_FakeWeatherRepository())],
-        child: const MaterialApp(home: Scaffold(body: SingleChildScrollView(child: WeatherCard()))),
+        child: const MaterialApp(
+          home: Scaffold(body: SingleChildScrollView(child: WeatherCard())),
+        ),
       ),
     );
     await tester.pumpAndSettle();

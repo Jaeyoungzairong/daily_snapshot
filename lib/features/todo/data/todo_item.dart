@@ -31,7 +31,9 @@ class TodoItem {
       text: json['text'] as String,
       done: json['done'] as bool,
       createdAt: DateTime.parse(json['createdAt'] as String),
-      completedAt: (json['completedAt'] as String?) == null ? null : DateTime.parse(json['completedAt'] as String),
+      completedAt: (json['completedAt'] as String?) == null
+          ? null
+          : DateTime.parse(json['completedAt'] as String),
     );
   }
 

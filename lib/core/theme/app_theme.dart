@@ -18,7 +18,13 @@ class AppAccentColors extends ThemeExtension<AppAccentColors> {
   final Color files;
 
   @override
-  AppAccentColors copyWith({Color? weather, Color? fx, Color? todo, Color? shortcuts, Color? files}) {
+  AppAccentColors copyWith({
+    Color? weather,
+    Color? fx,
+    Color? todo,
+    Color? shortcuts,
+    Color? files,
+  }) {
     return AppAccentColors(
       weather: weather ?? this.weather,
       fx: fx ?? this.fx,
@@ -58,26 +64,26 @@ class AppTheme {
   static const _filesAccentDark = Color(0xFF83D89B);
 
   static ThemeData get light => _themeFrom(
-        ColorScheme.fromSeed(seedColor: _seedColor),
-        const AppAccentColors(
-          weather: _weatherAccentLight,
-          fx: _fxAccentLight,
-          todo: _todoAccentLight,
-          shortcuts: _shortcutsAccentLight,
-          files: _filesAccentLight,
-        ),
-      );
+    ColorScheme.fromSeed(seedColor: _seedColor),
+    const AppAccentColors(
+      weather: _weatherAccentLight,
+      fx: _fxAccentLight,
+      todo: _todoAccentLight,
+      shortcuts: _shortcutsAccentLight,
+      files: _filesAccentLight,
+    ),
+  );
 
   static ThemeData get dark => _themeFrom(
-        ColorScheme.fromSeed(seedColor: _seedColor, brightness: Brightness.dark),
-        const AppAccentColors(
-          weather: _weatherAccentDark,
-          fx: _fxAccentDark,
-          todo: _todoAccentDark,
-          shortcuts: _shortcutsAccentDark,
-          files: _filesAccentDark,
-        ),
-      );
+    ColorScheme.fromSeed(seedColor: _seedColor, brightness: Brightness.dark),
+    const AppAccentColors(
+      weather: _weatherAccentDark,
+      fx: _fxAccentDark,
+      todo: _todoAccentDark,
+      shortcuts: _shortcutsAccentDark,
+      files: _filesAccentDark,
+    ),
+  );
 
   static ThemeData _themeFrom(ColorScheme colorScheme, AppAccentColors accentColors) {
     return ThemeData(
@@ -93,14 +99,8 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         centerTitle: false,
       ),
-      cardTheme: const CardThemeData(
-        elevation: 1,
-        margin: EdgeInsets.zero,
-      ),
-      inputDecorationTheme: const InputDecorationTheme(
-        border: OutlineInputBorder(),
-        isDense: true,
-      ),
+      cardTheme: const CardThemeData(elevation: 1, margin: EdgeInsets.zero),
+      inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder(), isDense: true),
       extensions: [accentColors],
     );
   }

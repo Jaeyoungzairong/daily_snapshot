@@ -180,33 +180,39 @@ void main() {
       expect(memos.first.title, '새 메모');
     });
 
-    test('scheduleRename()/scheduleContent() save automatically after the debounce delay', () async {
-      final container = _makeContainer();
-      await container.read(todoMemoProvider.future);
-      final notifier = container.read(todoMemoProvider.notifier);
-      final memo = (await notifier.addMemo())!;
+    test(
+      'scheduleRename()/scheduleContent() save automatically after the debounce delay',
+      () async {
+        final container = _makeContainer();
+        await container.read(todoMemoProvider.future);
+        final notifier = container.read(todoMemoProvider.notifier);
+        final memo = (await notifier.addMemo())!;
 
-      notifier.scheduleRename(memo.id, '디바운스 제목');
-      notifier.scheduleContent(memo.id, '디바운스 내용');
-      await Future<void>.delayed(const Duration(milliseconds: 700));
+        notifier.scheduleRename(memo.id, '디바운스 제목');
+        notifier.scheduleContent(memo.id, '디바운스 내용');
+        await Future<void>.delayed(const Duration(milliseconds: 700));
 
-      final updated = container.read(todoMemoProvider).value!.first;
-      expect(updated.title, '디바운스 제목');
-      expect(updated.content, '디바운스 내용');
-    });
+        final updated = container.read(todoMemoProvider).value!.first;
+        expect(updated.title, '디바운스 제목');
+        expect(updated.content, '디바운스 내용');
+      },
+    );
 
-    test('flushPending() saves a scheduled edit immediately without waiting for the debounce', () async {
-      final container = _makeContainer();
-      await container.read(todoMemoProvider.future);
-      final notifier = container.read(todoMemoProvider.notifier);
-      final memo = (await notifier.addMemo())!;
+    test(
+      'flushPending() saves a scheduled edit immediately without waiting for the debounce',
+      () async {
+        final container = _makeContainer();
+        await container.read(todoMemoProvider.future);
+        final notifier = container.read(todoMemoProvider.notifier);
+        final memo = (await notifier.addMemo())!;
 
-      notifier.scheduleRename(memo.id, '즉시 저장 제목');
-      await notifier.flushPending();
+        notifier.scheduleRename(memo.id, '즉시 저장 제목');
+        await notifier.flushPending();
 
-      final updated = container.read(todoMemoProvider).value!.first;
-      expect(updated.title, '즉시 저장 제목');
-    });
+        final updated = container.read(todoMemoProvider).value!.first;
+        expect(updated.title, '즉시 저장 제목');
+      },
+    );
 
     test('cancelPendingEdits() discards a scheduled edit instead of saving it', () async {
       final container = _makeContainer();

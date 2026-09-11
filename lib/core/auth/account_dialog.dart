@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../widgets/confirm_dialog.dart';
 import '../widgets/dialog_header_icon.dart';
 import 'auth_provider.dart';
 import 'sign_in_prompt.dart';
@@ -43,9 +44,39 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
       if (mounted) Navigator.of(context).pop();
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('로그아웃에 실패했습니다. 다시 시도해주세요.')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('로그아웃에 실패했습니다. 다시 시도해주세요.')));
+      }
+    } finally {
+      if (mounted) setState(() => _signingOut = false);
+    }
+  }
+
+  /// 다른 PC에 로그인한 채로 로그아웃을 잊고 나왔을 때를 대비한 안전장치. 이 계정으로
+  /// 로그인된 모든 세션(이 기기 포함)을 무효화한다 — 특정 기기만 골라 끊을 방법이 없어서
+  /// "전체"로만 동작한다(AuthService.forceLogoutAllDevices 참고).
+  Future<void> _forceLogoutAllDevices() async {
+    if (_signingOut) return;
+    final confirmed = await confirmAction(
+      context,
+      title: '모든 기기에서 로그아웃',
+      message: '이 기기를 포함해 로그인된 모든 기기에서 로그아웃됩니다.\n다시 로그인해야 합니다.',
+      confirmLabel: '로그아웃',
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _signingOut = true);
+    try {
+      await widget.onBeforeSignOut?.call();
+    } catch (_) {}
+
+    if (!mounted) return;
+    try {
+      await ref.read(authServiceProvider).forceLogoutAllDevices();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('로그아웃에 실패했습니다. 다시 시도해주세요.')));
       }
     } finally {
       if (mounted) setState(() => _signingOut = false);
@@ -68,7 +99,7 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      contentPadding: const EdgeInsets.fromLTRB(32, 36, 32, 36),
+      contentPadding: const EdgeInsets.all(24),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 380),
         child: Column(
@@ -79,16 +110,19 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
               backgroundColor: colorScheme.primaryContainer,
               foregroundColor: colorScheme.onPrimaryContainer,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             authState.when(
-              loading: () => const SizedBox(
-                height: 80,
-                child: Center(child: CircularProgressIndicator()),
-              ),
+              loading: () =>
+                  const SizedBox(height: 80, child: Center(child: CircularProgressIndicator())),
               error: (error, _) => Text('로그인 상태를 확인할 수 없습니다: $error'),
               data: (uid) => uid == null
                   ? const SignInPrompt()
-                  : _SignedInContent(email: email, signingOut: _signingOut, onSignOut: _signOut),
+                  : _SignedInContent(
+                      email: email,
+                      signingOut: _signingOut,
+                      onSignOut: _signOut,
+                      onForceLogoutAllDevices: _forceLogoutAllDevices,
+                    ),
             ),
           ],
         ),
@@ -98,11 +132,17 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
 }
 
 class _SignedInContent extends StatelessWidget {
-  const _SignedInContent({required this.email, required this.signingOut, required this.onSignOut});
+  const _SignedInContent({
+    required this.email,
+    required this.signingOut,
+    required this.onSignOut,
+    required this.onForceLogoutAllDevices,
+  });
 
   final String? email;
   final bool signingOut;
   final VoidCallback onSignOut;
+  final VoidCallback onForceLogoutAllDevices;
 
   @override
   Widget build(BuildContext context) {
@@ -116,13 +156,13 @@ class _SignedInContent extends StatelessWidget {
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
             style: FilledButton.styleFrom(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              minimumSize: const Size.fromHeight(52),
+              minimumSize: const Size.fromHeight(48),
               textStyle: TextStyle(
                 fontWeight: theme.brightness == Brightness.dark ? FontWeight.w600 : null,
               ),
@@ -136,6 +176,20 @@ class _SignedInContent extends StatelessWidget {
                   )
                 : const Icon(Icons.logout),
             label: const Text('로그아웃'),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // 다른 PC에 로그인한 채로 로그아웃을 잊고 나왔을 때를 위한 안전장치. 자주 쓸
+        // 기능이 아니라 위 로그아웃 버튼보다 한 단계 낮은 강조(TextButton)로 둔다.
+        TextButton(
+          onPressed: signingOut ? null : onForceLogoutAllDevices,
+          style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+          child: Text(
+            '다른 모든 기기에서 로그아웃',
+            style: TextStyle(
+              decoration: TextDecoration.underline,
+              decorationColor: theme.colorScheme.error,
+            ),
           ),
         ),
       ],

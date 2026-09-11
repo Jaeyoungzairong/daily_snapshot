@@ -65,16 +65,18 @@ class KmaWeatherRepository implements WeatherRepository {
     required int numOfRows,
     required String valueKey,
   }) async {
-    final uri = Uri.parse('$_baseUrl/$operation').replace(queryParameters: {
-      'serviceKey': LocalConfig.kmaServiceKey,
-      'pageNo': '1',
-      'numOfRows': '$numOfRows',
-      'dataType': 'JSON',
-      'base_date': baseDateTime.baseDate,
-      'base_time': baseDateTime.baseTime,
-      'nx': '${grid.nx}',
-      'ny': '${grid.ny}',
-    });
+    final uri = Uri.parse('$_baseUrl/$operation').replace(
+      queryParameters: {
+        'serviceKey': LocalConfig.kmaServiceKey,
+        'pageNo': '1',
+        'numOfRows': '$numOfRows',
+        'dataType': 'JSON',
+        'base_date': baseDateTime.baseDate,
+        'base_time': baseDateTime.baseTime,
+        'nx': '${grid.nx}',
+        'ny': '${grid.ny}',
+      },
+    );
     final json = await _apiClient.getJson(uri);
 
     final header = (json['response'] as Map<String, dynamic>)['header'] as Map<String, dynamic>;
@@ -85,7 +87,9 @@ class KmaWeatherRepository implements WeatherRepository {
     final body = (json['response'] as Map<String, dynamic>)['body'] as Map<String, dynamic>;
     // 결과가 없을 때 items가 빈 문자열로 오는 경우가 있어(공공데이터포털 흔한 케이스) 방어한다.
     final itemsField = body['items'];
-    final rawItems = itemsField is Map<String, dynamic> ? (itemsField['item'] as List? ?? const []) : const [];
+    final rawItems = itemsField is Map<String, dynamic>
+        ? (itemsField['item'] as List? ?? const [])
+        : const [];
 
     return rawItems.map((e) {
       final map = e as Map<String, dynamic>;
@@ -131,11 +135,11 @@ WeatherModel buildWeatherModel({
   }
 
   DateTime slotTime(String key) => DateTime(
-        int.parse(key.substring(0, 4)),
-        int.parse(key.substring(4, 6)),
-        int.parse(key.substring(6, 8)),
-        int.parse(key.substring(8, 10)),
-      );
+    int.parse(key.substring(0, 4)),
+    int.parse(key.substring(4, 6)),
+    int.parse(key.substring(6, 8)),
+    int.parse(key.substring(8, 10)),
+  );
 
   final sortedKeys = slots.keys.toList()..sort();
   final nowHour = DateTime(now.year, now.month, now.day, now.hour);
@@ -150,17 +154,19 @@ WeatherModel buildWeatherModel({
     final category = slots[key]!;
     final tmp = category['TMP'];
     if (tmp == null) continue;
-    hourlyForecast.add(HourlyForecast(
-      time: time,
-      temperature: double.parse(tmp),
-      condition: WeatherCondition.fromKmaSkyPty(
-        sky: int.tryParse(category['SKY'] ?? '') ?? 1,
-        pty: int.tryParse(category['PTY'] ?? '') ?? 0,
+    hourlyForecast.add(
+      HourlyForecast(
+        time: time,
+        temperature: double.parse(tmp),
+        condition: WeatherCondition.fromKmaSkyPty(
+          sky: int.tryParse(category['SKY'] ?? '') ?? 1,
+          pty: int.tryParse(category['PTY'] ?? '') ?? 0,
+        ),
+        isNow: time == nowHour,
+        precipitationProbability: int.tryParse(category['POP'] ?? '') ?? 0,
+        precipitationAmount: _noPrecipitation(category['PCP']),
       ),
-      isNow: time == nowHour,
-      precipitationProbability: int.tryParse(category['POP'] ?? '') ?? 0,
-      precipitationAmount: _noPrecipitation(category['PCP']),
-    ));
+    );
   }
 
   // 일별 예보: 오늘 포함 3일치. 단기예보 해상도가 3일째부터 3시간 간격으로 성기어지므로
@@ -200,25 +206,33 @@ WeatherModel buildWeatherModel({
     }
     if (tmps.isEmpty) continue;
 
-    dailyForecast.add(DailyForecast(
-      date: DateTime(int.parse(dateStr.substring(0, 4)), int.parse(dateStr.substring(4, 6)), int.parse(dateStr.substring(6, 8))),
-      // TMN/TMX(일 최저/최고)는 발표된 시각(각각 06시/15시)이 이미 지났으면 응답에 없다.
-      // 그럴 땐 그 날짜에 남아있는 시간별 기온(TMP) 중 최댓값/최솟값으로 대체한다.
-      maxTemp: tmx ?? tmps.reduce((a, b) => a > b ? a : b),
-      minTemp: tmn ?? tmps.reduce((a, b) => a < b ? a : b),
-      condition: WeatherCondition.fromKmaSkyPty(
-        sky: int.tryParse(repSky ?? '') ?? 1,
-        pty: int.tryParse(repPty ?? '') ?? 0,
+    dailyForecast.add(
+      DailyForecast(
+        date: DateTime(
+          int.parse(dateStr.substring(0, 4)),
+          int.parse(dateStr.substring(4, 6)),
+          int.parse(dateStr.substring(6, 8)),
+        ),
+        // TMN/TMX(일 최저/최고)는 발표된 시각(각각 06시/15시)이 이미 지났으면 응답에 없다.
+        // 그럴 땐 그 날짜에 남아있는 시간별 기온(TMP) 중 최댓값/최솟값으로 대체한다.
+        maxTemp: tmx ?? tmps.reduce((a, b) => a > b ? a : b),
+        minTemp: tmn ?? tmps.reduce((a, b) => a < b ? a : b),
+        condition: WeatherCondition.fromKmaSkyPty(
+          sky: int.tryParse(repSky ?? '') ?? 1,
+          pty: int.tryParse(repPty ?? '') ?? 0,
+        ),
+        // 하루 중 슬롯별 강수확률(POP)의 최댓값을 그날의 대표값으로 쓴다.
+        precipitationProbability: maxPop,
       ),
-      // 하루 중 슬롯별 강수확률(POP)의 최댓값을 그날의 대표값으로 쓴다.
-      precipitationProbability: maxPop,
-    ));
+    );
   }
 
   // 기상청이 드물게 빈 응답을 줄 때(점검/일시 장애 등) 아래 필드들이 없을 수 있다.
   // Null 체크 연산자(!)나 dailyForecast.first를 그대로 쓰면 "Bad state: No element" 같은
   // 개발자용 문구가 그대로 화면에 노출되므로, 여기서 미리 걸러 안내 문구로 바꾼다.
-  if (dailyForecast.isEmpty || currentByCategory['T1H'] == null || currentByCategory['WSD'] == null) {
+  if (dailyForecast.isEmpty ||
+      currentByCategory['T1H'] == null ||
+      currentByCategory['WSD'] == null) {
     throw ApiException('기상청 응답이 비어 있습니다. 잠시 후 다시 시도해주세요.');
   }
 
@@ -265,13 +279,7 @@ String? _currentPrecipitationText(String? rn1) {
 /// 겹치지 않는다.
 String _simplifyPrecipitationText(String raw) {
   var text = raw.replaceAll(RegExp(r'\.0(?=mm|~)'), '');
-  text = text.replaceFirstMapped(
-    RegExp(r'^(\d[\d.~]*mm) 미만$'),
-    (match) => '<${match[1]}',
-  );
-  text = text.replaceFirstMapped(
-    RegExp(r'^(\d[\d.~]*mm) 이상$'),
-    (match) => '>${match[1]}',
-  );
+  text = text.replaceFirstMapped(RegExp(r'^(\d[\d.~]*mm) 미만$'), (match) => '<${match[1]}');
+  text = text.replaceFirstMapped(RegExp(r'^(\d[\d.~]*mm) 이상$'), (match) => '>${match[1]}');
   return text;
 }

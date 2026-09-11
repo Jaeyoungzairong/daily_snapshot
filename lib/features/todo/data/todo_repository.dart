@@ -20,17 +20,21 @@ class TodoRepository {
 
   Future<void> addItem(TodoItem item) => _mutateItems((items) => [...items, item]);
 
-  Future<void> toggleItem(String id) => _mutateItems((items) => [
-        for (final item in items)
-          if (item.id == id)
-            item.copyWith(done: !item.done, completedAt: item.done ? null : DateTime.now())
-          else
-            item,
-      ]);
+  Future<void> toggleItem(String id) => _mutateItems(
+    (items) => [
+      for (final item in items)
+        if (item.id == id)
+          item.copyWith(done: !item.done, completedAt: item.done ? null : DateTime.now())
+        else
+          item,
+    ],
+  );
 
-  Future<void> removeItem(String id) => _mutateItems((items) => items.where((item) => item.id != id).toList());
+  Future<void> removeItem(String id) =>
+      _mutateItems((items) => items.where((item) => item.id != id).toList());
 
-  Future<void> clearCompletedItems() => _mutateItems((items) => items.where((item) => !item.done).toList());
+  Future<void> clearCompletedItems() =>
+      _mutateItems((items) => items.where((item) => !item.done).toList());
 
   Future<void> _mutateItems(List<TodoItem> Function(List<TodoItem> current) transform) {
     return _store.mutate(
@@ -45,28 +49,33 @@ class TodoRepository {
 
   Future<void> addMemo(MemoItem memo) => _mutateMemos((memos) => [...memos, memo]);
 
-  Future<void> renameMemo(String id, String title) => _mutateMemos((memos) => [
-        for (final memo in memos)
-          if (memo.id == id) memo.copyWith(title: title, updatedAt: DateTime.now()) else memo,
-      ]);
+  Future<void> renameMemo(String id, String title) => _mutateMemos(
+    (memos) => [
+      for (final memo in memos)
+        if (memo.id == id) memo.copyWith(title: title, updatedAt: DateTime.now()) else memo,
+    ],
+  );
 
-  Future<void> updateMemoContent(String id, String content) => _mutateMemos((memos) => [
-        for (final memo in memos)
-          if (memo.id == id) memo.copyWith(content: content, updatedAt: DateTime.now()) else memo,
-      ]);
+  Future<void> updateMemoContent(String id, String content) => _mutateMemos(
+    (memos) => [
+      for (final memo in memos)
+        if (memo.id == id) memo.copyWith(content: content, updatedAt: DateTime.now()) else memo,
+    ],
+  );
 
-  Future<void> removeMemo(String id) => _mutateMemos((memos) => memos.where((memo) => memo.id != id).toList());
+  Future<void> removeMemo(String id) =>
+      _mutateMemos((memos) => memos.where((memo) => memo.id != id).toList());
 
   Future<void> moveMemo(String id, int delta) => _mutateMemos((memos) {
-        final index = memos.indexWhere((memo) => memo.id == id);
-        if (index == -1) return memos;
-        final newIndex = index + delta;
-        if (newIndex < 0 || newIndex >= memos.length) return memos;
-        final updated = [...memos];
-        final memo = updated.removeAt(index);
-        updated.insert(newIndex, memo);
-        return updated;
-      });
+    final index = memos.indexWhere((memo) => memo.id == id);
+    if (index == -1) return memos;
+    final newIndex = index + delta;
+    if (newIndex < 0 || newIndex >= memos.length) return memos;
+    final updated = [...memos];
+    final memo = updated.removeAt(index);
+    updated.insert(newIndex, memo);
+    return updated;
+  });
 
   Future<void> _mutateMemos(List<MemoItem> Function(List<MemoItem> current) transform) {
     return _store.mutate(

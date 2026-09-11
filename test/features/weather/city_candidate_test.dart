@@ -24,11 +24,7 @@ void main() {
     });
 
     test('fromJson leaves population null when the field is absent', () {
-      final json = {
-        'name': 'Anyang-dong',
-        'latitude': 35.7193,
-        'longitude': 127.05194,
-      };
+      final json = {'name': 'Anyang-dong', 'latitude': 35.7193, 'longitude': 127.05194};
 
       final candidate = CityCandidate.fromJson(json);
 

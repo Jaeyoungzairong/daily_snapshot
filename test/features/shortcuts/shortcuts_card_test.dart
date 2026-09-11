@@ -5,7 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   testWidgets('ShortcutsCard renders all configured links without overflow', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: SingleChildScrollView(child: ShortcutsCard()))),
+      const MaterialApp(
+        home: Scaffold(body: SingleChildScrollView(child: ShortcutsCard())),
+      ),
     );
     await tester.pumpAndSettle();
 

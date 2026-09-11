@@ -19,6 +19,15 @@ class PendingEmailNotFoundException implements Exception {
 
 /// Firebase 인증을 감싼다. 할 일/메모(Firestore)는 이메일 링크 로그인 뒤에만 쓸 수 있고,
 /// 그중에서도 관리자가 승인한 이메일만 실제로 데이터에 접근할 수 있다.
+///
+/// `admin_allowed_emails/{email}` 문서 필드:
+/// - `isActive` (bool): 로그인 승인 여부
+/// - `isAdmin` (bool): 공유 파일 삭제 등 관리자 전용 기능 허용 여부
+/// - `forceLogoutAfter` (Timestamp, 선택): 이 시각 이후 발급된 세션(로그인)만 유효.
+///   "다른 모든 기기에서 로그아웃" 기능이 갱신하며, Firestore/Storage 규칙이
+///   `request.auth.token.auth_time`(그 세션이 실제 로그인한 시각)과 비교해 이보다
+///   오래된 세션의 모든 요청을 거부한다 — 이미 발급된 토큰이 살아있어도(최대 1시간)
+///   다음 요청부터 즉시 막히므로, 토큰 자체를 무효화하는 것보다 체감상 더 빠르다.
 class AuthService {
   AuthService({FirebaseAuth? auth, FirebaseFirestore? firestore, KeyValueStore? store})
     : _auth = auth ?? FirebaseAuth.instance,
@@ -97,6 +106,22 @@ class AuthService {
   }
 
   Future<void> signOut() => _auth.signOut();
+
+  /// 이 계정으로 로그인된 모든 기기(이 기기 포함)의 세션을 무효화한다.
+  ///
+  /// `auth_time`(실제 로그인 시각)은 토큰이 자동 갱신되어도 바뀌지 않아서, 특정 기기만
+  /// 콕 집어 구분할 방법이 Firebase Auth 표준 클레임만으로는 없다. 그래서 "이 기기는
+  /// 남기고 나머지만" 대신 전부 로그아웃시키는 것으로 설계했다 — 이 기기도 다음 요청부터
+  /// 막히므로, 곧바로 로컬 세션도 정리해서 "로그인된 것처럼 보이는데 아무 것도 안 되는"
+  /// 상태가 되지 않게 한다.
+  Future<void> forceLogoutAllDevices() async {
+    final email = _auth.currentUser?.email;
+    if (email == null) return;
+    await _firestore.collection('admin_allowed_emails').doc(email.toLowerCase()).set({
+      'forceLogoutAfter': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    await _auth.signOut();
+  }
 
   Future<void> _ensureApproved() async {
     final email = _auth.currentUser?.email;

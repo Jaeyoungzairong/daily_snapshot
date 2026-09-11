@@ -40,9 +40,7 @@ class _FakeWeatherRepository extends WeatherRepository {
 
   @override
   Future<List<CityCandidate>> searchCities(String query) async {
-    return [
-      CityCandidate(name: query, latitude: 0, longitude: 0, country: '테스트국가'),
-    ];
+    return [CityCandidate(name: query, latitude: 0, longitude: 0, country: '테스트국가')];
   }
 
   @override
@@ -59,9 +57,7 @@ void main() {
 
   test('weatherProvider exposes data from the repository', () async {
     final container = ProviderContainer(
-      overrides: [
-        weatherRepositoryProvider.overrideWithValue(_FakeWeatherRepository()),
-      ],
+      overrides: [weatherRepositoryProvider.overrideWithValue(_FakeWeatherRepository())],
     );
     addTearDown(container.dispose);
 
@@ -74,9 +70,7 @@ void main() {
 
   test('citySearchProvider returns candidates for a non-empty query', () async {
     final container = ProviderContainer(
-      overrides: [
-        weatherRepositoryProvider.overrideWithValue(_FakeWeatherRepository()),
-      ],
+      overrides: [weatherRepositoryProvider.overrideWithValue(_FakeWeatherRepository())],
     );
     addTearDown(container.dispose);
 
@@ -88,9 +82,7 @@ void main() {
 
   test('citySearchProvider returns empty list for blank query', () async {
     final container = ProviderContainer(
-      overrides: [
-        weatherRepositoryProvider.overrideWithValue(_FakeWeatherRepository()),
-      ],
+      overrides: [weatherRepositoryProvider.overrideWithValue(_FakeWeatherRepository())],
     );
     addTearDown(container.dispose);
 

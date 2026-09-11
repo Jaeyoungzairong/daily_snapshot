@@ -38,8 +38,10 @@ void main() {
         pivotCode: 'USD',
       );
 
-      expect(rates.map((r) => r.currency.code).toList(),
-          CurrencyCatalog.targetCurrencies.map((c) => c.code).toList());
+      expect(
+        rates.map((r) => r.currency.code).toList(),
+        CurrencyCatalog.targetCurrencies.map((c) => c.code).toList(),
+      );
     });
   });
 

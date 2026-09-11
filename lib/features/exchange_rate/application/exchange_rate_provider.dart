@@ -54,9 +54,10 @@ final chartPeriodProvider = NotifierProvider<ChartPeriodNotifier, ChartPeriod>(
 
 /// (통화 코드, 기간)별로 캐싱되는 환율 그래프 데이터.
 final chartHistoryProvider =
-    FutureProvider.family<List<ExchangeRateHistoryPoint>, (String currencyCode, ChartPeriod period)>(
-  (ref, args) async {
-    final repository = ref.watch(exchangeRateRepositoryProvider);
-    return repository.fetchRateHistory(currencyCode: args.$1, days: args.$2.days);
-  },
-);
+    FutureProvider.family<
+      List<ExchangeRateHistoryPoint>,
+      (String currencyCode, ChartPeriod period)
+    >((ref, args) async {
+      final repository = ref.watch(exchangeRateRepositoryProvider);
+      return repository.fetchRateHistory(currencyCode: args.$1, days: args.$2.days);
+    });

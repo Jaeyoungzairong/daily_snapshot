@@ -5,12 +5,22 @@ import 'package:flutter/material.dart';
 /// 서로 다른 강도의 빨강으로 보이기 때문이다 — 고정값을 써서 항상 같은 톤을 유지한다.
 const Color _destructiveColor = Color(0xFFB3261E);
 
+/// 파괴적이지 않은 확인 버튼 색(업로드 등). colorScheme.primary도 같은 이유로 쓰지 않는다 —
+/// M3 다크 테마에서 primary는 밝은 톤으로 반전돼 옆의 어두운 취소 버튼과 명암이 뒤집혀
+/// 보인다. 앱 시드 컬러를 고정값으로 써서 취소 버튼과 같은 "어두운 칩 + 밝은 글자" 톤을
+/// 라이트/다크 모두에서 유지한다.
+const Color _primaryActionColor = Color(0xFF5B5FEF);
+
 /// 실수 방지용 확인 다이얼로그. 사용자가 [confirmLabel] 버튼을 눌렀을 때만 true를 반환한다.
+///
+/// [destructive]가 true(기본값)면 확인 버튼이 고정 빨간색(삭제 등 되돌릴 수 없는 동작)이고,
+/// false면 고정 남색(업로드 등 파괴적이지 않은 동작)을 쓴다.
 Future<bool> confirmAction(
   BuildContext context, {
   required String title,
   required String message,
   String confirmLabel = '삭제',
+  bool destructive = true,
 }) async {
   final confirmed = await showDialog<bool>(
     context: context,
@@ -50,7 +60,7 @@ Future<bool> confirmAction(
                   Expanded(
                     child: FilledButton(
                       style: FilledButton.styleFrom(
-                        backgroundColor: _destructiveColor,
+                        backgroundColor: destructive ? _destructiveColor : _primaryActionColor,
                         foregroundColor: Colors.white,
                       ),
                       onPressed: () => Navigator.pop(context, true),

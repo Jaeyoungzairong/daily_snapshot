@@ -142,10 +142,8 @@ class RateHistoryChart extends ConsumerWidget {
                         // minIncluded/maxIncluded를 켜도 "정확한 경계값" 라벨이 일반 interval 눈금과
                         // 정확히 같은 위치·같은 값으로 겹치기만 할 뿐이라 안전하다. 그리고 이걸 켜야
                         // 축 맨 위/아래 라벨이 실제로 그려진다(꺼두면 경계 눈금 자체가 안 나온다).
-                        getTitlesWidget: (value, meta) => Text(
-                          Formatters.amount(value),
-                          style: theme.textTheme.labelSmall,
-                        ),
+                        getTitlesWidget: (value, meta) =>
+                            Text(Formatters.amount(value), style: theme.textTheme.labelSmall),
                       ),
                     ),
                     bottomTitles: AxisTitles(
@@ -169,14 +167,18 @@ class RateHistoryChart extends ConsumerWidget {
                   lineBarsData: [
                     LineChartBarData(
                       spots: [
-                        for (var i = 0; i < points.length; i++) FlSpot(i.toDouble(), points[i].krwValue),
+                        for (var i = 0; i < points.length; i++)
+                          FlSpot(i.toDouble(), points[i].krwValue),
                       ],
                       isCurved: true,
                       curveSmoothness: 0.2,
                       color: accentColor,
                       barWidth: 2.5,
                       dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(show: true, color: accentColor.withValues(alpha: 0.12)),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: accentColor.withValues(alpha: 0.12),
+                      ),
                     ),
                   ],
                 ),

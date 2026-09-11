@@ -17,7 +17,7 @@ abstract class CloudListStore {
 
 class FirestoreListStore implements CloudListStore {
   FirestoreListStore({required this.uid, FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final String uid;
   final FirebaseFirestore _firestore;

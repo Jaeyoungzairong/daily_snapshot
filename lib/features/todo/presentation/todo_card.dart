@@ -67,9 +67,8 @@ class _TodoCardState extends ConsumerState<TodoCard> {
     if (memo != null) {
       _selectMemo(memo.id);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('메모는 최대 $maxMemoCount개까지 만들 수 있습니다.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('메모는 최대 $maxMemoCount개까지 만들 수 있습니다.')));
     }
   }
 
@@ -156,10 +155,7 @@ class _TodoCardState extends ConsumerState<TodoCard> {
 
     return itemsAsync.when(
       loading: () => const LoadingView(),
-      error: (error, _) => ErrorView(
-        message: _describeDataError(error),
-        onRetry: reloadPage,
-      ),
+      error: (error, _) => ErrorView(message: _describeDataError(error), onRetry: reloadPage),
       data: (items) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -194,10 +190,7 @@ class _TodoCardState extends ConsumerState<TodoCard> {
           const SizedBox(height: 8),
           memosAsync.when(
             loading: () => const LoadingView(),
-            error: (error, _) => ErrorView(
-              message: _describeDataError(error),
-              onRetry: reloadPage,
-            ),
+            error: (error, _) => ErrorView(message: _describeDataError(error), onRetry: reloadPage),
             data: (memos) => MemoSection(
               memos: memos,
               selectedMemoId: _selectedMemoId,

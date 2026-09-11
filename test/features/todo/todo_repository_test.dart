@@ -43,8 +43,12 @@ void main() {
 
     test('clearCompletedItems keeps only pending items', () async {
       final repository = TodoRepository(store: _InMemoryCloudListStore());
-      await repository.addItem(TodoItem(id: '1', text: 'A', done: true, createdAt: DateTime(2026, 8, 28)));
-      await repository.addItem(TodoItem(id: '2', text: 'B', done: false, createdAt: DateTime(2026, 8, 28)));
+      await repository.addItem(
+        TodoItem(id: '1', text: 'A', done: true, createdAt: DateTime(2026, 8, 28)),
+      );
+      await repository.addItem(
+        TodoItem(id: '2', text: 'B', done: false, createdAt: DateTime(2026, 8, 28)),
+      );
 
       await repository.clearCompletedItems();
 

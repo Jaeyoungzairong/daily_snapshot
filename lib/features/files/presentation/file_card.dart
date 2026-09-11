@@ -37,36 +37,16 @@ const Map<String, IconData> _iconByExtension = {
 IconData _iconFor(String? extension) =>
     _iconByExtension[extension?.toLowerCase()] ?? Icons.insert_drive_file_outlined;
 
-enum _DuplicateChoice { cancel, skipDuplicates, uploadAnyway }
-
-/// 이미 목록에 같은 이름의 파일이 있을 때 어떻게 할지 묻는다. 무조건 막거나(관리자 아니면
-/// 재업로드할 방법이 없어짐) 조용히 이름을 바꾸지 않고, 판단을 사용자에게 맡긴다.
-Future<_DuplicateChoice> _confirmDuplicateNames(
-  BuildContext context,
-  List<String> duplicateNames,
-) async {
-  final choice = await showDialog<_DuplicateChoice>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('동일한 이름의 파일이 있습니다'),
-      content: Text('이미 목록에 있는 파일명과 같습니다:\n${duplicateNames.join(', ')}'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, _DuplicateChoice.cancel),
-          child: const Text('취소'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, _DuplicateChoice.skipDuplicates),
-          child: const Text('중복 제외하고 업로드'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, _DuplicateChoice.uploadAnyway),
-          child: const Text('그래도 업로드'),
-        ),
-      ],
-    ),
+/// 이미 목록에 같은 이름의 파일이 있을 때 그래도 올릴지 묻는다. 무조건 막지 않고(관리자가
+/// 아니면 재업로드할 방법이 없어짐) 판단을 사용자에게 맡긴다.
+Future<bool> _confirmDuplicateNames(BuildContext context, List<String> duplicateNames) {
+  return confirmAction(
+    context,
+    title: '동일한 이름의 파일이 있습니다',
+    message: '이미 목록에 있는 파일명과 같습니다:\n${duplicateNames.join(', ')}\n\n그래도 업로드 하시겠습니까?',
+    confirmLabel: '업로드',
+    destructive: false,
   );
-  return choice ?? _DuplicateChoice.cancel;
 }
 
 class FileCard extends ConsumerWidget {
@@ -100,26 +80,19 @@ class _FileListSection extends ConsumerWidget {
     final existingNames = (ref.read(filesProvider).value ?? []).map((entry) => entry.name).toSet();
     final duplicateNames = files.map((file) => file.name).where(existingNames.contains).toSet();
 
-    var filesToUpload = files;
     if (duplicateNames.isNotEmpty) {
       if (!context.mounted) return;
-      final choice = await _confirmDuplicateNames(context, duplicateNames.toList());
-      if (choice == _DuplicateChoice.cancel) return;
-      if (choice == _DuplicateChoice.skipDuplicates) {
-        filesToUpload = files.where((file) => !duplicateNames.contains(file.name)).toList();
-        if (filesToUpload.isEmpty) return;
-      }
+      final confirmed = await _confirmDuplicateNames(context, duplicateNames.toList());
+      if (!confirmed) return;
     }
 
     try {
-      final result = await ref.read(fileUploadProvider.notifier).uploadFiles(filesToUpload);
+      final result = await ref.read(fileUploadProvider.notifier).uploadFiles(files);
       if (!context.mounted || !result.hasFailures) return;
       final summary = result.failures.map((f) => '${f.fileName}: ${f.reason}').join(', ');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            '${filesToUpload.length}개 중 ${result.succeededCount}개 업로드 완료 · 실패: $summary',
-          ),
+          content: Text('${files.length}개 중 ${result.succeededCount}개 업로드 완료 · 실패: $summary'),
         ),
       );
     } catch (error) {
@@ -147,7 +120,7 @@ class _FileListSection extends ConsumerWidget {
           error: (error, _) => ErrorView(message: error.toString()),
           data: (files) {
             if (files.isEmpty) {
-              return Text('올라온 파일이 없습니다. + 버튼을 눌러 추가해보세요.', style: captionStyle);
+              return Text('올라온 파일이 없습니다. 파일 업로드 버튼을 눌러 추가해보세요.', style: captionStyle);
             }
             return ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 660),
@@ -181,10 +154,15 @@ class _FileListSection extends ConsumerWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: theme.colorScheme.primary,
-                side: BorderSide(color: theme.colorScheme.primary),
+            // OutlinedButton(테두리만)은 카드 배경(elevation 틴트로 primary 색조가 살짝
+            // 섞인 밝은 배경)과 명도 차이가 크지 않아 라이트모드에서 흐리게 보였다.
+            // primaryContainer/onPrimaryContainer는 Container 계열 역할이라 primary와
+            // 달리 라이트/다크에서 반전 방향이 반대라, 테마값 그대로 양쪽 모드 모두
+            // 안정적인 대비를 낸다.
+            FilledButton.tonalIcon(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.primaryContainer,
+                foregroundColor: theme.colorScheme.onPrimaryContainer,
               ),
               onPressed: uploadProgress == null ? () => _pickAndUpload(context, ref) : null,
               icon: const Icon(Icons.upload_file),
