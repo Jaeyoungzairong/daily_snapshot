@@ -141,7 +141,7 @@ class _MemoChipWrap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = theme.extension<AppAccentColors>()?.todo ?? theme.colorScheme.primary;
+    final accent = theme.extension<AppAccentColors>()?.memo ?? theme.colorScheme.primary;
     final onAccent = ThemeData.estimateBrightnessForColor(accent) == Brightness.dark
         ? Colors.white
         : Colors.black87;

@@ -11,6 +11,7 @@ import '../../files/application/file_provider.dart';
 import '../../files/presentation/file_card.dart';
 import '../../shortcuts/presentation/shortcuts_card.dart';
 import '../../todo/application/todo_provider.dart';
+import '../../todo/presentation/memo_card.dart';
 import '../../todo/presentation/todo_card.dart';
 import '../../weather/presentation/weather_card.dart';
 
@@ -26,6 +27,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   static const List<Widget> _cards = [
     WeatherCard(),
     ShortcutsCard(),
+    MemoCard(),
     TodoCard(),
     FileCard(),
     ExchangeRateCard(),
@@ -60,13 +62,17 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   // 다음으로 시도하는 Firestore 요청이 permission-denied로 실패한다. 그 상태로 방치하면
   // 카드마다 에러 화면만 보이고 "다시 시도"를 눌러도 세션 자체가 무효라 똑같이 실패한다 —
   // 그래서 감지되는 즉시 이 기기도 로컬 로그아웃시켜 로그인 화면으로 자연스럽게 돌려보낸다.
-  // 여러 provider(할일/메모/파일함)가 동시에 같은 이유로 실패할 수 있어 중복 처리를 막는다.
-  bool _handlingSessionInvalidation = false;
-
+  // 여러 provider(할일/메모/파일함/isSessionValidProvider)가 동시에 같은 이유로 실패할 수
+  // 있어 sessionInvalidationHandledProvider로 중복 처리를 막는다 — 이 가드는 "다른 모든
+  // 기기에서 로그아웃" 버튼을 누른 기기 자신도 선점하므로 그쪽과 공유한다.
   void _handlePotentialSessionInvalidation(Object error) {
     if (error is! FirebaseException || error.code != 'permission-denied') return;
-    if (_handlingSessionInvalidation) return;
-    _handlingSessionInvalidation = true;
+    _signOutForInvalidSession();
+  }
+
+  void _signOutForInvalidSession() {
+    if (ref.read(sessionInvalidationHandledProvider)) return;
+    ref.read(sessionInvalidationHandledProvider.notifier).set(true);
 
     ref.read(authServiceProvider).signOut();
     ScaffoldMessenger.of(context)
@@ -94,10 +100,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       ref.listen(filesProvider, (previous, next) {
         next.whenOrNull(error: (error, _) => _handlePotentialSessionInvalidation(error));
       });
+      // Firestore/Storage 규칙이 실제로 거부할 때까지 기다리면(재시도 백오프 때문에)
+      // 체감상 느려서, admin_allowed_emails 문서를 직접 구독해 더 빠르게 반응한다.
+      ref.listen(isSessionValidProvider, (previous, next) {
+        if (next == false) _signOutForInvalidSession();
+      });
     }
     // 다시 로그인하면(새 세션) 이후에 또 무효화될 수 있으니 다시 감지할 수 있게 풀어둔다.
     ref.listen(authUidProvider, (previous, next) {
-      if (next.value != null) _handlingSessionInvalidation = false;
+      if (next.value != null) ref.read(sessionInvalidationHandledProvider.notifier).set(false);
     });
 
     return Scaffold(

@@ -32,3 +32,41 @@ final isAdminProvider = StreamProvider<bool>((ref) {
   if (email == null) return Stream.value(false);
   return ref.watch(authServiceProvider).watchIsAdmin(email);
 });
+
+final _forceLogoutAfterProvider = StreamProvider<DateTime?>((ref) {
+  final email = ref.watch(authEmailProvider).value;
+  if (email == null) return Stream.value(null);
+  return ref.watch(authServiceProvider).watchForceLogoutAfter(email);
+});
+
+/// 이 세션(이 기기의 이 로그인)이 "다른 모든 기기에서 로그아웃"으로 무효화되지 않았는지.
+/// Firestore/Storage 규칙이 실제 접근을 거부할 때까지 기다리면(재시도 백오프 때문에)
+/// 체감상 로그아웃까지 시간이 걸려서, admin_allowed_emails 문서를 직접 구독해 더 빠르게
+/// 반응한다. forceLogoutAfter나 로그인 시각을 아직 모르면(로딩 중) 무효로 단정하지 않고
+/// true(유효함)로 취급한다 — 어차피 실제 권한은 서버 규칙이 최종적으로 판단한다.
+final isSessionValidProvider = Provider<bool>((ref) {
+  final forceLogoutAfter = ref.watch(_forceLogoutAfterProvider).value;
+  if (forceLogoutAfter == null) return true;
+  final lastSignInTime = ref.watch(_authUserProvider).value?.metadata.lastSignInTime;
+  if (lastSignInTime == null) return true;
+  return lastSignInTime.isAfter(forceLogoutAfter);
+});
+
+/// 세션 무효화(강제 로그아웃 감지)를 이미 처리 중/처리했는지 표시하는 가드.
+///
+/// 두 군데에서 같이 쓴다: (1) 대시보드가 세션이 무효해진 걸 감지해 로컬 로그아웃 처리를
+/// 시작할 때 true로 켜서 중복 처리를 막고, (2) "다른 모든 기기에서 로그아웃" 버튼을 누른
+/// 바로 그 기기가 스스로를 선점적으로 true로 켜서, 본인이 의도적으로 누른 동작에 대해
+/// "세션이 만료되었습니다" 같은 안내가 뜨지 않게 한다. 로그인하면 다시 false로 풀어서
+/// 다음 세션에서도 감지할 수 있게 한다.
+class SessionInvalidationHandledNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+final sessionInvalidationHandledProvider =
+    NotifierProvider<SessionInvalidationHandledNotifier, bool>(
+      SessionInvalidationHandledNotifier.new,
+    );

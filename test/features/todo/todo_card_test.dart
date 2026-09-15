@@ -101,42 +101,4 @@ void main() {
     expect(find.text('오늘 할 일을 추가해보세요.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
-
-  testWidgets('TodoCard adds a memo, renames it, edits content, and deletes it without overflow', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: _signedInOverrides(),
-        child: const MaterialApp(
-          home: Scaffold(body: SingleChildScrollView(child: TodoCard())),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('메모가 없습니다. + 버튼을 눌러 추가해보세요.'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('새 메모 추가'));
-    await tester.pumpAndSettle();
-
-    expect(find.byTooltip('메모 삭제'), findsOneWidget);
-
-    await tester.enterText(find.widgetWithText(TextField, '제목'), '회의록');
-    await tester.enterText(find.byType(TextField).last, '오늘 논의 내용');
-    await tester.pumpAndSettle();
-
-    expect(find.text('회의록'), findsOneWidget);
-
-    await tester.ensureVisible(find.byTooltip('메모 삭제'));
-    await tester.tap(find.byTooltip('메모 삭제'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('메모 삭제'), findsOneWidget);
-    await tester.tap(find.text('삭제'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('메모가 없습니다. + 버튼을 눌러 추가해보세요.'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
 }

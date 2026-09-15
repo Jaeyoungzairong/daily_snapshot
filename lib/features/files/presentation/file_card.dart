@@ -9,6 +9,7 @@ import '../../../core/utils/url_opener.dart';
 import '../../../core/widgets/confirm_dialog.dart';
 import '../../../core/widgets/dashboard_card.dart';
 import '../../../core/widgets/loading_error_view.dart';
+import '../../../core/widgets/pagination_controls.dart';
 import '../../../core/widgets/signed_out_placeholder.dart';
 import '../application/file_provider.dart';
 import '../data/file_entry.dart';
@@ -70,10 +71,23 @@ class FileCard extends ConsumerWidget {
   }
 }
 
-class _FileListSection extends ConsumerWidget {
+class _FileListSection extends ConsumerStatefulWidget {
   const _FileListSection();
 
-  Future<void> _pickAndUpload(BuildContext context, WidgetRef ref) async {
+  @override
+  ConsumerState<_FileListSection> createState() => _FileListSectionState();
+}
+
+class _FileListSectionState extends ConsumerState<_FileListSection> {
+  // 특정 상한을 전제하지 않고 파일 개수에 따라 페이지 수를 그때그때 계산하므로
+  // 상한(maxFileCount)이 바뀌어도 그대로 동작한다.
+  static const int _pageSize = 10;
+
+  // 파일이 삭제돼 페이지 수가 줄어들 수 있어, 이 필드를 직접 쓰지 않고 build 안에서
+  // 항상 clamp한 값(page)만 슬라이싱/버튼 상태/다음 값 계산에 공통으로 사용한다.
+  int _currentPage = 0;
+
+  Future<void> _pickAndUpload() async {
     final files = await FilePicker.pickFiles();
     if (files.isEmpty) return;
 
@@ -81,14 +95,20 @@ class _FileListSection extends ConsumerWidget {
     final duplicateNames = files.map((file) => file.name).where(existingNames.contains).toSet();
 
     if (duplicateNames.isNotEmpty) {
-      if (!context.mounted) return;
+      if (!mounted) return;
       final confirmed = await _confirmDuplicateNames(context, duplicateNames.toList());
       if (!confirmed) return;
     }
 
     try {
       final result = await ref.read(fileUploadProvider.notifier).uploadFiles(files);
-      if (!context.mounted || !result.hasFailures) return;
+      // 새 파일은 항상 최신순으로 1페이지 맨 위에 들어간다 — 다른 페이지를 보던 중
+      // 업로드했다면 방금 올린 결과를 바로 볼 수 있도록 1페이지로 돌아간다. 하나도
+      // 성공하지 못했다면(전부 실패) 목록에 변화가 없으므로 페이지를 그대로 둔다.
+      if (mounted && result.succeededCount > 0) {
+        setState(() => _currentPage = 0);
+      }
+      if (!mounted || !result.hasFailures) return;
       final summary = result.failures.map((f) => '${f.fileName}: ${f.reason}').join(', ');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -96,14 +116,14 @@ class _FileListSection extends ConsumerWidget {
         ),
       );
     } catch (error) {
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('업로드 중 문제가 발생했습니다: $error')));
     }
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final filesAsync = ref.watch(filesProvider);
     final uploadProgress = ref.watch(fileUploadProvider);
@@ -122,19 +142,29 @@ class _FileListSection extends ConsumerWidget {
             if (files.isEmpty) {
               return Text('올라온 파일이 없습니다. 파일 업로드 버튼을 눌러 추가해보세요.', style: captionStyle);
             }
-            return ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 660),
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    for (final entry in files)
-                      _FileRow(
-                        entry: entry,
-                        canDelete: isAdmin || entry.uploadedByEmail == currentEmail,
-                      ),
-                  ],
-                ),
-              ),
+            final totalPages = (files.length / _pageSize).ceil();
+            final page = _currentPage.clamp(0, totalPages - 1);
+            final pageItems = files.skip(page * _pageSize).take(_pageSize);
+            return Column(
+              children: [
+                for (final entry in pageItems)
+                  _FileRow(
+                    key: ValueKey(entry.id),
+                    entry: entry,
+                    canDelete: isAdmin || entry.uploadedByEmail == currentEmail,
+                  ),
+                if (totalPages > 1) ...[
+                  const SizedBox(height: 4),
+                  PaginationControls(
+                    page: page,
+                    totalPages: totalPages,
+                    onPrevious: page > 0 ? () => setState(() => _currentPage = page - 1) : null,
+                    onNext: page < totalPages - 1
+                        ? () => setState(() => _currentPage = page + 1)
+                        : null,
+                  ),
+                ],
+              ],
             );
           },
         ),
@@ -164,7 +194,7 @@ class _FileListSection extends ConsumerWidget {
                 backgroundColor: theme.colorScheme.primaryContainer,
                 foregroundColor: theme.colorScheme.onPrimaryContainer,
               ),
-              onPressed: uploadProgress == null ? () => _pickAndUpload(context, ref) : null,
+              onPressed: uploadProgress == null ? _pickAndUpload : null,
               icon: const Icon(Icons.upload_file),
               label: const Text('파일 업로드'),
             ),
@@ -177,7 +207,7 @@ class _FileListSection extends ConsumerWidget {
 }
 
 class _FileRow extends ConsumerWidget {
-  const _FileRow({required this.entry, required this.canDelete});
+  const _FileRow({super.key, required this.entry, required this.canDelete});
 
   final FileEntry entry;
   final bool canDelete;
