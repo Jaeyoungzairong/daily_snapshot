@@ -72,8 +72,15 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
 
     if (!mounted) return;
     try {
+      // 이 기기는 본인이 의도적으로 누른 동작이므로, dashboard_page.dart의 세션 무효화
+      // 감지(isSessionValidProvider)가 이 요청으로 갱신된 forceLogoutAfter를 보고 "세션이
+      // 만료되었습니다" 안내를 또 띄우지 않도록 미리 선점한다. 아래에서 실패하면(로그아웃
+      // 자체는 안 된 상태) 다시 풀어서, 이후 진짜 세션 무효화를 놓치지 않게 한다.
+      ref.read(sessionInvalidationHandledProvider.notifier).set(true);
       await ref.read(authServiceProvider).forceLogoutAllDevices();
+      if (mounted) Navigator.of(context).pop();
     } catch (_) {
+      ref.read(sessionInvalidationHandledProvider.notifier).set(false);
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('로그아웃에 실패했습니다. 다시 시도해주세요.')));
