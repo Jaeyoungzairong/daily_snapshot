@@ -117,7 +117,10 @@ class MemoSection extends StatelessWidget {
           ),
         ] else
           Text(
-            '메모가 없습니다. + 버튼을 눌러 추가해보세요.',
+            // "선택된 메모 없음"과 "메모 자체가 없음"은 다른 상황이다 — 목록은 있는데 선택만
+            // 잠깐 유실된 경우(예: 다른 기기에서 방금 삭제됨)까지 "메모가 없습니다"라고 하면
+            // 실제로 메모가 있는데도 없다고 잘못 안내하게 된다.
+            memos.isEmpty ? '메모가 없습니다. + 버튼을 눌러 추가해보세요.' : '메모를 선택해주세요.',
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
           ),
       ],

@@ -31,8 +31,12 @@ class _MemoCardState extends ConsumerState<MemoCard> {
     super.dispose();
   }
 
-  void _selectMemo(String id) {
-    ref.read(todoMemoProvider.notifier).cancelPendingEdits();
+  Future<void> _selectMemo(String id) async {
+    // cancelPendingEdits()는 예약된 저장을 버리기만 해서, 입력 직후(디바운스 500ms 안)
+    // 다른 메모로 바로 전환하면 방금 입력한 내용이 저장 없이 사라졌다 — flushPending()으로
+    // 바꿔 전환 전에 먼저 저장한다.
+    await ref.read(todoMemoProvider.notifier).flushPending();
+    if (!mounted) return;
     final memos = ref.read(todoMemoProvider).value ?? [];
     final index = memos.indexWhere((memo) => memo.id == id);
     if (index == -1) return;
@@ -120,35 +124,36 @@ class _MemoCardState extends ConsumerState<MemoCard> {
   Widget _buildSignedInContent() {
     final memosAsync = ref.watch(todoMemoProvider);
 
-    // 메모 목록은 비동기로 로드되므로, 처음 도착했을 때 한 번만 첫 메모를 선택해 채운다
-    // (그 이후엔 사용자가 선택/입력 중인 내용을 덮어쓰면 안 되므로).
-    ref.listen(todoMemoProvider, (previous, next) {
-      final memos = next.value;
-      if (!_memoInitialized && memos != null) {
-        _memoInitialized = true;
-        if (memos.isNotEmpty) {
-          _selectedMemoId = memos.first.id;
-          _memoTitleController.text = memos.first.title;
-          _memoContentController.text = memos.first.content;
-        }
-      }
-    });
-
     return memosAsync.when(
       loading: () => const LoadingView(),
       error: (error, _) => ErrorView(message: describeTodoDataError(error), onRetry: reloadPage),
-      data: (memos) => MemoSection(
-        memos: memos,
-        selectedMemoId: _selectedMemoId,
-        titleController: _memoTitleController,
-        contentController: _memoContentController,
-        onSelect: _selectMemo,
-        onAdd: _addMemo,
-        onDelete: _deleteSelectedMemo,
-        onMove: _moveSelectedMemo,
-        onTitleChanged: _onMemoTitleChanged,
-        onContentChanged: _onMemoContentChanged,
-      ),
+      data: (memos) {
+        // 메모 목록이 처음 도착했을 때 한 번만 첫 메모를 선택해 채운다(그 이후엔 사용자가
+        // 선택/입력 중인 내용을 덮어쓰면 안 되므로). build() 안에서 직접 확인해야
+        // 안전하다 — ref.listen은 리스너 등록 시점에 이미 있던 값에는 반응하지 않아서,
+        // provider가 이미 데이터를 갖고 있는 상태로 이 State가 새로 생기면(예: 리사이즈로
+        // 카드가 재마운트될 때) 영영 초기 선택이 안 채워지는 문제가 있었다.
+        if (!_memoInitialized) {
+          _memoInitialized = true;
+          if (memos.isNotEmpty) {
+            _selectedMemoId = memos.first.id;
+            _memoTitleController.text = memos.first.title;
+            _memoContentController.text = memos.first.content;
+          }
+        }
+        return MemoSection(
+          memos: memos,
+          selectedMemoId: _selectedMemoId,
+          titleController: _memoTitleController,
+          contentController: _memoContentController,
+          onSelect: _selectMemo,
+          onAdd: _addMemo,
+          onDelete: _deleteSelectedMemo,
+          onMove: _moveSelectedMemo,
+          onTitleChanged: _onMemoTitleChanged,
+          onContentChanged: _onMemoContentChanged,
+        );
+      },
     );
   }
 }
