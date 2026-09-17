@@ -95,7 +95,7 @@ class RateHistoryChart extends ConsumerWidget {
                             show: true,
                             getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
                               radius: 6,
-                              color: theme.colorScheme.surface,
+                              color: theme.cardTheme.color ?? theme.colorScheme.surface,
                               strokeColor: accentColor,
                               strokeWidth: 3,
                             ),

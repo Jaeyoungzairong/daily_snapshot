@@ -70,45 +70,63 @@ class AppTheme {
   static const _shortcutsAccentDark = Color(0xFF85B7EB);
   static const _filesAccentDark = Color(0xFF83D89B);
 
-  static ThemeData get light => _themeFrom(
-    ColorScheme.fromSeed(seedColor: _seedColor),
-    const AppAccentColors(
-      weather: _weatherAccentLight,
-      fx: _fxAccentLight,
-      todo: _todoAccentLight,
-      memo: _memoAccentLight,
-      shortcuts: _shortcutsAccentLight,
-      files: _filesAccentLight,
-    ),
-  );
+  static ThemeData get light {
+    final colorScheme = ColorScheme.fromSeed(seedColor: _seedColor);
+    return _themeFrom(
+      colorScheme,
+      const AppAccentColors(
+        weather: _weatherAccentLight,
+        fx: _fxAccentLight,
+        todo: _todoAccentLight,
+        memo: _memoAccentLight,
+        shortcuts: _shortcutsAccentLight,
+        files: _filesAccentLight,
+      ),
+      // 카드가 도드라져 보이도록 배경은 은은하게 톤을 주고, 카드는 순백으로 고정한다.
+      backgroundColor: colorScheme.surfaceContainer,
+      cardColor: colorScheme.surfaceContainerLowest,
+    );
+  }
 
-  static ThemeData get dark => _themeFrom(
-    ColorScheme.fromSeed(seedColor: _seedColor, brightness: Brightness.dark),
-    const AppAccentColors(
-      weather: _weatherAccentDark,
-      fx: _fxAccentDark,
-      todo: _todoAccentDark,
-      memo: _memoAccentDark,
-      shortcuts: _shortcutsAccentDark,
-      files: _filesAccentDark,
-    ),
-  );
+  static ThemeData get dark {
+    final colorScheme = ColorScheme.fromSeed(seedColor: _seedColor, brightness: Brightness.dark);
+    return _themeFrom(
+      colorScheme,
+      const AppAccentColors(
+        weather: _weatherAccentDark,
+        fx: _fxAccentDark,
+        todo: _todoAccentDark,
+        memo: _memoAccentDark,
+        shortcuts: _shortcutsAccentDark,
+        files: _filesAccentDark,
+      ),
+      // 다크모드는 기존 색감(배경/카드 모두 낮은 톤)을 유지한다.
+      // Card 위젯의 M3 기본 색상은 surface가 아니라 surfaceContainerLow.
+      backgroundColor: colorScheme.surfaceContainerLowest,
+      cardColor: colorScheme.surfaceContainerLow,
+    );
+  }
 
-  static ThemeData _themeFrom(ColorScheme colorScheme, AppAccentColors accentColors) {
+  static ThemeData _themeFrom(
+    ColorScheme colorScheme,
+    AppAccentColors accentColors, {
+    required Color backgroundColor,
+    required Color cardColor,
+  }) {
     return ThemeData(
       useMaterial3: true,
       fontFamily: 'Pretendard',
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: colorScheme.surfaceContainerLowest,
+      scaffoldBackgroundColor: backgroundColor,
       appBarTheme: AppBarTheme(
-        backgroundColor: colorScheme.surfaceContainerLowest,
+        backgroundColor: backgroundColor,
         foregroundColor: colorScheme.onSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
         centerTitle: false,
       ),
-      cardTheme: const CardThemeData(elevation: 1, margin: EdgeInsets.zero),
+      cardTheme: CardThemeData(elevation: 1, margin: EdgeInsets.zero, color: cardColor),
       inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder(), isDense: true),
       extensions: [accentColors],
     );
