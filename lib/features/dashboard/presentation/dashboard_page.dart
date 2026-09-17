@@ -24,13 +24,26 @@ class DashboardPage extends ConsumerStatefulWidget {
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
   static const double _wideBreakpoint = 900;
-  static const List<Widget> _cards = [
-    WeatherCard(),
-    ShortcutsCard(),
-    MemoCard(),
-    TodoCard(),
-    FileCard(),
-    ExchangeRateCard(),
+
+  // 넓은 화면(Wrap)과 좁은 화면(Column)은 부모 위젯 타입 자체가 달라서, 폭이 경계값을
+  // 넘나들 때 GlobalKey 없이는 Flutter가 각 카드를 언마운트했다가 새로 마운트한다 —
+  // 그러면 카드마다 갖고 있던 로컬 상태(예: 메모 카드의 선택된 메모, 파일함/할일의 현재
+  // 페이지)가 리사이즈 한 번에 전부 날아간다. GlobalKey를 주면 Flutter가 부모가 바뀌어도
+  // 같은 엘리먼트를 찾아 그대로 옮겨 상태를 보존한다.
+  final _weatherKey = GlobalKey();
+  final _shortcutsKey = GlobalKey();
+  final _memoKey = GlobalKey();
+  final _todoKey = GlobalKey();
+  final _fileKey = GlobalKey();
+  final _exchangeRateKey = GlobalKey();
+
+  late final List<Widget> _cards = [
+    WeatherCard(key: _weatherKey),
+    ShortcutsCard(key: _shortcutsKey),
+    MemoCard(key: _memoKey),
+    TodoCard(key: _todoKey),
+    FileCard(key: _fileKey),
+    ExchangeRateCard(key: _exchangeRateKey),
   ];
 
   @override

@@ -40,9 +40,15 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
 
     if (!mounted) return;
     try {
+      // signOut() 직후 아직 살아있는 할일/메모/파일함 리스너가 인증 컨텍스트 소실로
+      // permission-denied를 받을 수 있는데, 이걸 dashboard_page.dart가 "다른 기기에서
+      // 로그아웃당함"으로 오인해 세션 만료 안내를 띄우지 않도록 정상 로그아웃도 미리
+      // 선점한다(_forceLogoutAllDevices와 동일한 이유).
+      ref.read(sessionInvalidationHandledProvider.notifier).set(true);
       await ref.read(authServiceProvider).signOut();
       if (mounted) Navigator.of(context).pop();
     } catch (_) {
+      ref.read(sessionInvalidationHandledProvider.notifier).set(false);
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('로그아웃에 실패했습니다. 다시 시도해주세요.')));

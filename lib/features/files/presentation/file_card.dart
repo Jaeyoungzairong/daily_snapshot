@@ -212,9 +212,15 @@ class _FileRow extends ConsumerWidget {
   final FileEntry entry;
   final bool canDelete;
 
-  Future<void> _preview(WidgetRef ref) async {
-    final url = await ref.read(fileRepositoryProvider).getDownloadUrl(entry.storagePath);
-    openUrl(url);
+  Future<void> _preview(BuildContext context, WidgetRef ref) async {
+    try {
+      final url = await ref.read(fileRepositoryProvider).getDownloadUrl(entry.storagePath);
+      openUrl(url);
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('미리보기를 여는 중 문제가 발생했습니다: $error')));
+    }
   }
 
   Future<void> _download(BuildContext context, WidgetRef ref) async {
@@ -278,7 +284,7 @@ class _FileRow extends ConsumerWidget {
           ),
           if (isPreviewableExtension(extension))
             IconButton(
-              onPressed: () => _preview(ref),
+              onPressed: () => _preview(context, ref),
               icon: const Icon(Icons.visibility_outlined, size: 20),
               tooltip: '미리보기',
               visualDensity: VisualDensity.compact,

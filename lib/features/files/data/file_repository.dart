@@ -83,8 +83,17 @@ class FileRepository {
   /// Storage 파일을 먼저 지우고, 성공했을 때만 Firestore 문서를 지운다. 순서를 바꾸면
   /// Storage 삭제가 실패했을 때 목록에서는 사라졌는데 Storage에는 파일이 남아 용량을
   /// 조용히 차지하는(눈에 안 보이는) 상황이 생긴다.
+  ///
+  /// Storage는 지워졌는데 그 직후 Firestore 문서 삭제만 실패하면(네트워크 문제 등), 문서는
+  /// 목록에 남고 Storage 파일만 없는 상태가 된다. 이때 재시도하면 Storage 삭제가
+  /// object-not-found로 실패해 Firestore 삭제까지 아예 못 가는 문제가 있었다 — 이미 지워진
+  /// 상태로 보고 통과시켜서, 재시도만으로 스스로 복구되게 한다.
   Future<void> deleteFile(FileEntry entry) async {
-    await _storage.ref(entry.storagePath).delete();
+    try {
+      await _storage.ref(entry.storagePath).delete();
+    } on FirebaseException catch (e) {
+      if (e.code != 'object-not-found') rethrow;
+    }
     await _collection.doc(entry.id).delete();
   }
 }

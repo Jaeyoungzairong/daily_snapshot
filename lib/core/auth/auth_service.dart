@@ -59,13 +59,22 @@ class AuthService {
   /// (없으면 null). "다른 모든 기기에서 로그아웃"을 감지해 다른 탭/기기를 즉시 로그아웃
   /// 시키는 용도 — 실제 권한 검증은 Firestore/Storage 규칙이 같은 필드로 다시 확인하므로,
   /// 여기서 조금 늦거나 틀려도 보안에는 영향이 없다(체감 속도만 개선하는 보조 수단).
-  Stream<DateTime?> watchForceLogoutAfter(String email) {
-    return _firestore
-        .collection('admin_allowed_emails')
-        .doc(email.toLowerCase())
-        .snapshots()
-        .map((doc) => (doc.data()?['forceLogoutAfter'] as Timestamp?)?.toDate());
+  ///
+  /// 콜드 스타트 시 이미 무효한 세션으로 todo/memo/files 리스너가 동시에 거부당하면, 같은
+  /// 커넥션을 공유하는 .snapshots() 구독도 덩달아 지연될 수 있다 — 그래서 1회성 get()으로
+  /// 먼저 값을 확인해 최대한 빨리 흘려보낸 뒤, 이어서 실시간 구독으로 넘어간다.
+  Stream<DateTime?> watchForceLogoutAfter(String email) async* {
+    final docRef = _firestore.collection('admin_allowed_emails').doc(email.toLowerCase());
+    try {
+      yield _parseForceLogoutAfter(await docRef.get());
+    } catch (_) {
+      // 실패해도 무시 — 바로 아래 실시간 구독이 이어서 값을 채워준다.
+    }
+    yield* docRef.snapshots().map(_parseForceLogoutAfter);
   }
+
+  DateTime? _parseForceLogoutAfter(DocumentSnapshot<Map<String, dynamic>> doc) =>
+      (doc.data()?['forceLogoutAfter'] as Timestamp?)?.toDate();
 
   bool isSignInLink(String link) => _auth.isSignInWithEmailLink(link);
 
