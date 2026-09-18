@@ -1,4 +1,5 @@
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -282,7 +283,9 @@ class _FileRow extends ConsumerWidget {
               ],
             ),
           ),
-          if (isPreviewableExtension(extension))
+          // 미리보기는 "새 탭에서 열기"(openUrl)에 기대는 기능이라 웹 전용이다 — 안드로이드는
+          // 다운로드만 지원한다.
+          if (kIsWeb && isPreviewableExtension(extension))
             IconButton(
               onPressed: () => _preview(context, ref),
               icon: const Icon(Icons.visibility_outlined, size: 20),

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../data/key_value_store.dart';
 
@@ -38,6 +39,11 @@ class AuthService {
   final FirebaseFirestore _firestore;
   final KeyValueStore _store;
 
+  // GoogleSignIn.instance.initialize()는 딱 한 번만 호출하고 그 완료를 기다린 뒤에
+  // 다른 메서드를 써야 한다(패키지 문서 요구사항) — signInWithGoogle()을 여러 번
+  // 호출해도 초기화가 한 번만 실행되도록 플래그로 가드한다.
+  bool _googleSignInInitialized = false;
+
   /// 로그인 상태가 바뀔 때마다 현재 사용자(로그인 안 됐으면 null)를 흘려보낸다. uid/email
   /// 등 파생 정보는 이 스트림 하나만 구독해서 만들어야 한다 — authStateChanges()는 일반
   /// 브로드캐스트 스트림이라 여러 곳에서 각자 새로 구독하면, 이미 지나간 "로그인 복원"
@@ -53,6 +59,19 @@ class AuthService {
         .doc(email.toLowerCase())
         .snapshots()
         .map((doc) => doc.data()?['isAdmin'] == true);
+  }
+
+  /// [email] 문서의 `androidAccessEnabled`(boolean)가 true인지 실시간으로 흘려보낸다 —
+  /// 관리자가 이 사용자에게 안드로이드 접근 자체를 열어줬는지를 나타내는 필드다. 계정
+  /// 다이얼로그가 "Google 계정 연동" 버튼을 보여줄지 판단하는 용도 — 관리자가 아직 true로
+  /// 안 켠 사용자에게는 버튼을 안 보여줘서, 허용 안 된 사용자가 임의로 연동을 시도하는
+  /// 걸 막는다.
+  Stream<bool> watchAndroidAccessEnabled(String email) {
+    return _firestore
+        .collection('admin_allowed_emails')
+        .doc(email.toLowerCase())
+        .snapshots()
+        .map((doc) => doc.data()?['androidAccessEnabled'] == true);
   }
 
   /// [email]의 admin_allowed_emails 문서에서 forceLogoutAfter를 실시간으로 흘려보낸다
@@ -126,6 +145,56 @@ class AuthService {
     await _ensureApproved();
   }
 
+  /// 안드로이드 전용 로그인 경로: Google 계정으로 로그인한다. 이 기기의 Google 계정이
+  /// 웹에서 [linkGoogleAccount]로 이미 회사메일 계정에 연동돼 있으면 같은 uid로
+  /// 로그인되어 할일/메모(`users/{uid}/...`)를 그대로 이어서 본다. 아직 연동 전이면
+  /// 완전히 새로운 별도 계정이 생성되고, 그 Google 계정 이메일이 화이트리스트에 없는 한
+  /// 아래 [_ensureApproved]에서 곧바로 막힌다.
+  Future<void> signInWithGoogle() async {
+    if (!_googleSignInInitialized) {
+      await GoogleSignIn.instance.initialize();
+      _googleSignInInitialized = true;
+    }
+    final account = await GoogleSignIn.instance.authenticate();
+    final credential = GoogleAuthProvider.credential(
+      idToken: account.authentication.idToken,
+    );
+    await _auth.signInWithCredential(credential);
+    // 미승인이면 로컬 세션만 끊는 게 아니라 방금 막 생성된 계정 자체를 지운다(아래
+    // _ensureApproved 참고) — 그냥 signOut만 하면 화이트리스트에 없는 Google 계정으로
+    // 서버에 빈 계정만 남아, 나중에 그 계정을 웹에서 연동하려 할 때
+    // credential-already-in-use로 막히는 문제가 있었다.
+    await _ensureApproved(deleteIfUnapproved: true);
+  }
+
+  /// 웹 전용: 지금 로그인된 회사메일 계정에 Google 계정을 추가로 연동한다. 이후
+  /// 안드로이드에서 그 Google 계정으로 [signInWithGoogle]을 호출하면 새 계정이 아니라
+  /// 이 계정과 같은 uid로 로그인되어 데이터를 공유해서 본다. Firebase 표준 계정 연동
+  /// 기능(`linkWithPopup`)이라 `google_sign_in` 패키지 없이도 동작한다.
+  Future<void> linkGoogleAccount() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    // prompt: select_account가 없으면 브라우저에 이미 로그인된 Google 계정이 하나뿐일 때
+    // 계정 선택 화면 없이 곧장 그 계정으로 진행돼버린다 — 회사메일 계정과는 다른 별도
+    // Google 계정을 골라 연동하려는 의도인 경우가 많아 항상 선택 화면을 띄우게 강제한다.
+    final provider = GoogleAuthProvider()..setCustomParameters({'prompt': 'select_account'});
+    await user.linkWithPopup(provider);
+  }
+
+  /// [linkGoogleAccount]로 걸어둔 연동을 해제한다. 이메일 링크 로그인은 그대로 남으므로
+  /// 이 계정에 로그인할 수단이 없어지는 일은 없다. 해제 후 이 Google 계정으로 안드로이드에서
+  /// 다시 로그인하면(signInWithGoogle) 더 이상 같은 uid로 연결되지 않고 완전히 새 계정이 된다.
+  Future<void> unlinkGoogleAccount() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await user.unlink(GoogleAuthProvider.PROVIDER_ID);
+  }
+
+  /// 지금 로그인된 계정에 Google 제공자가 이미 연동돼 있는지 — 계정 다이얼로그가
+  /// "Google 계정 연동" 버튼을 보여줄지, 이미 연동됨을 보여줄지 판단하는 용도.
+  bool get isGoogleAccountLinked =>
+      _auth.currentUser?.providerData.any((info) => info.providerId == 'google.com') ?? false;
+
   Future<void> signOut() => _auth.signOut();
 
   /// 이 계정으로 로그인된 모든 기기(이 기기 포함)의 세션을 무효화한다.
@@ -144,12 +213,26 @@ class AuthService {
     await _auth.signOut();
   }
 
-  Future<void> _ensureApproved() async {
-    final email = _auth.currentUser?.email;
+  /// [deleteIfUnapproved]가 true면 미승인일 때 로그아웃 대신 방금 막 로그인한 계정
+  /// 자체를 삭제한다(막 로그인한 직후라 재인증 없이 삭제 가능) — signInWithGoogle처럼
+  /// 계정이 그 순간 새로 생성될 수 있는 경로에서, 승인 안 된 채로 방치되는 빈 계정이
+  /// 남지 않게 하는 용도. completeSignInIfLink(이메일 링크)는 이 문제가 없으므로
+  /// 기본값(false, 로그아웃만)을 그대로 쓴다.
+  Future<void> _ensureApproved({bool deleteIfUnapproved = false}) async {
+    final user = _auth.currentUser;
+    final email = user?.email;
     if (email == null) return;
 
     if (!await _isEmailApproved(email)) {
-      await _auth.signOut();
+      if (deleteIfUnapproved) {
+        try {
+          await user!.delete();
+        } catch (_) {
+          await _auth.signOut();
+        }
+      } else {
+        await _auth.signOut();
+      }
       throw const NotApprovedException();
     }
   }

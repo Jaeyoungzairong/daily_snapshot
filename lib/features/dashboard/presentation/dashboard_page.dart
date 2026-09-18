@@ -1,10 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/account_dialog.dart';
 import '../../../core/auth/auth_provider.dart';
-import '../../../core/config/local_config.dart';
+import '../../../core/config/app_version_provider.dart';
 import '../../../core/theme/theme_mode_provider.dart';
 import '../../exchange_rate/presentation/exchange_rate_card.dart';
 import '../../files/application/file_provider.dart';
@@ -37,22 +38,25 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   final _fileKey = GlobalKey();
   final _exchangeRateKey = GlobalKey();
 
+  // 안드로이드는 할일/메모/공유파일함만 지원한다 — 날씨/환율/바로가기는 웹 전용 기능
+  // (위치 조회, 외부 탭 열기 등)에 기대고 있어 범위에서 제외했다. 원래(웹 전용 시절) 순서인
+  // 날씨·바로가기·메모·할일·파일함·환율을 그대로 유지하고, 안드로이드에서 제외되는 카드만
+  // 조건부로 뺀다.
   late final List<Widget> _cards = [
-    WeatherCard(key: _weatherKey),
-    ShortcutsCard(key: _shortcutsKey),
+    if (kIsWeb) ...[WeatherCard(key: _weatherKey), ShortcutsCard(key: _shortcutsKey)],
     MemoCard(key: _memoKey),
     TodoCard(key: _todoKey),
     FileCard(key: _fileKey),
-    ExchangeRateCard(key: _exchangeRateKey),
+    if (kIsWeb) ExchangeRateCard(key: _exchangeRateKey),
   ];
 
   @override
   void initState() {
     super.initState();
-    // 이메일 로그인 링크를 눌러 들어온 경우, 계정 아이콘을 직접 찾지 않아도 바로
-    // 로그인 확인 화면을 보여준다. 이 앱은 화면 전환이 없는 단일 페이지라
-    // initState는 앱 로드당 한 번만 실행된다.
-    if (ref.read(authServiceProvider).isSignInLink(Uri.base.toString())) {
+    // 이메일 로그인 링크를 눌러 들어온 경우, 계정 아이콘을 직접 찾지 않아도 바로 로그인
+    // 확인 화면을 보여준다(웹 전용 — 안드로이드는 이메일 링크를 받지 않고 Google 로그인만
+    // 쓴다). 이 앱은 화면 전환이 없는 단일 페이지라 initState는 앱 로드당 한 번만 실행된다.
+    if (kIsWeb && ref.read(authServiceProvider).isSignInLink(Uri.base.toString())) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _showAccountDialog(context);
       });
@@ -98,6 +102,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final isDark = themeMode == ThemeMode.dark;
     final authState = ref.watch(authUidProvider);
     final email = ref.watch(authEmailProvider).value;
+    final appVersion = ref.watch(appVersionProvider).value;
 
     // 로그인 상태일 때만 구독한다 — 로그아웃 상태에서까지 이 provider들을 듣기 시작하면
     // todoListProvider/todoMemoProvider가 곧바로 "로그인 후에만 사용할 수 있습니다"
@@ -171,7 +176,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: Text(
-                    'v${LocalConfig.appVersion}',
+                    appVersion == null ? '' : 'v$appVersion',
                     style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(color: Theme.of(context).colorScheme.outline),
                   ),

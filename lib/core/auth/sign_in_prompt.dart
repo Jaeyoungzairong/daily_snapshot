@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../utils/web_url.dart';
 import '../widgets/loading_error_view.dart';
@@ -23,7 +25,14 @@ String describeAuthError(Object error) {
         return '로그인 링크가 만료되었습니다. 새 로그인 링크를 다시 요청해주세요.';
       case 'invalid-email':
         return '이메일 형식을 다시 확인해주세요.';
+      case 'credential-already-in-use':
+        return '이 Google 계정은 이미 다른 계정에 연동되어 있습니다.';
+      case 'provider-already-linked':
+        return '이미 이 계정에 Google 계정이 연동되어 있습니다.';
     }
+  }
+  if (error is GoogleSignInException) {
+    return 'Google 로그인 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
   }
   return '로그인 처리 중 문제가 발생했습니다: $error';
 }
@@ -42,20 +51,26 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
   bool _linkSent = false;
   String? _errorMessage;
 
-  // 이메일 링크로 돌아온 경우를 위한 상태. isSignInWithEmailLink()/저장된 이메일 조회는
-  // 로컬 확인일 뿐 Firebase 서버 호출이 아니므로 자동으로 미리 보여줘도 안전하다.
-  // 실제 로그인(signInWithEmailLink, 서버 호출)은 사용자가 "로그인 계속하기"를 직접
-  // 눌러야만 실행된다 — 그래야 메일 보안 스캐너가 링크를 미리 열어봐도 1회용 로그인
-  // 코드가 그 자리에서 소모되지 않는다.
-  bool _checkingLink = true;
+  // 이메일 링크로 돌아온 경우를 위한 상태(웹 전용 — 안드로이드는 Google 로그인만 쓰므로
+  // 이 상태들이 전혀 필요 없다). isSignInWithEmailLink()/저장된 이메일 조회는 로컬
+  // 확인일 뿐 Firebase 서버 호출이 아니므로 자동으로 미리 보여줘도 안전하다. 실제
+  // 로그인(signInWithEmailLink, 서버 호출)은 사용자가 "로그인 계속하기"를 직접 눌러야만
+  // 실행된다 — 그래야 메일 보안 스캐너가 링크를 미리 열어봐도 1회용 로그인 코드가 그
+  // 자리에서 소모되지 않는다.
+  bool _checkingLink = kIsWeb;
   bool _isLinkMode = false;
   bool _confirming = false;
   String? _pendingEmail;
+  // _checkForSignInLink()에서 감지한 링크를 그대로 저장해뒀다가 _confirmSignIn()에서
+  // 재사용한다 — 다시 조회하지 않고 최초에 확인한 값을 그대로 써야 안전하다.
+  String? _detectedLink;
+
+  bool _signingInWithGoogle = false;
 
   @override
   void initState() {
     super.initState();
-    _checkForSignInLink();
+    if (kIsWeb) _checkForSignInLink();
   }
 
   @override
@@ -68,10 +83,12 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
   Future<void> _checkForSignInLink() async {
     final authService = ref.read(authServiceProvider);
     final link = Uri.base.toString();
+    if (!mounted) return;
     if (!authService.isSignInLink(link)) {
       setState(() => _checkingLink = false);
       return;
     }
+    _detectedLink = link;
     final email = await authService.peekPendingEmail();
     if (!mounted) return;
     setState(() {
@@ -97,7 +114,7 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
     try {
       await ref
           .read(authServiceProvider)
-          .completeSignInIfLink(Uri.base.toString(), emailOverride: manualEmail);
+          .completeSignInIfLink(_detectedLink!, emailOverride: manualEmail);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -129,6 +146,28 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
       setState(() => _errorMessage = '로그인 링크 발송에 실패했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_signingInWithGoogle) return;
+    setState(() {
+      _signingInWithGoogle = true;
+      _errorMessage = null;
+    });
+    try {
+      await ref.read(authServiceProvider).signInWithGoogle();
+    } on GoogleSignInException catch (error) {
+      // 계정 선택 화면에서 사용자가 직접 취소한 경우는 에러가 아니라 정상적인
+      // 흐름이라 메시지를 띄우지 않는다.
+      if (mounted && error.code != GoogleSignInExceptionCode.canceled) {
+        setState(() => _errorMessage = describeAuthError(error));
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _errorMessage = describeAuthError(error));
+    } finally {
+      if (mounted) setState(() => _signingInWithGoogle = false);
     }
   }
 
@@ -165,6 +204,48 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    // 안드로이드는 이메일 링크를 아예 받지 않고 Google 로그인만 쓴다 — 회사 메일 앱이
+    // 링크를 가로채 App Links가 못 열리는 문제를 원천적으로 피하기 위함. 이 계정으로
+    // 할일/메모 데이터를 이어서 보려면 웹에서 미리 계정 연동(AccountDialog의
+    // "Google 계정 연동하기")을 해둬야 한다.
+    if (!kIsWeb) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            '로그인하면 할 일·메모·파일함을 이용할 수 있어요.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium,
+          ),
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage!,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: _buttonShape(theme),
+              onPressed: _signingInWithGoogle ? null : _signInWithGoogle,
+              icon: _signingInWithGoogle
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.login),
+              label: const Text('Google로 로그인'),
+            ),
+          ),
+        ],
+      );
+    }
 
     if (_checkingLink) {
       return const SizedBox(height: 60, child: LoadingView());

@@ -1,3 +1,5 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,6 +26,7 @@ class AccountDialog extends ConsumerStatefulWidget {
 
 class _AccountDialogState extends ConsumerState<AccountDialog> {
   bool _signingOut = false;
+  bool _linkingGoogle = false;
 
   Future<void> _signOut() async {
     // 계정 다이얼로그를 직접 열고 로그아웃 버튼을 눌러야만 여기 도달하므로, 그 자체가
@@ -96,6 +99,76 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
     }
   }
 
+  /// 웹 전용. 지금 로그인된 회사메일 계정에 Google 계정을 연동해서, 안드로이드에서
+  /// 그 Google 계정으로 로그인해도(signInWithGoogle) 같은 uid로 들어와 할일/메모/
+  /// 파일함 데이터를 그대로 이어서 볼 수 있게 한다 — 안드로이드는 이메일 링크를 받지
+  /// 않으므로 이 연동이 사전에 웹에서 1회 되어 있어야 한다.
+  Future<void> _linkGoogleAccount() async {
+    if (_linkingGoogle) return;
+    setState(() => _linkingGoogle = true);
+    try {
+      await ref.read(authServiceProvider).linkGoogleAccount();
+    } on FirebaseAuthException catch (error) {
+      // 연동 팝업을 사용자가 그냥 닫은 경우는 에러가 아니라 정상적인 흐름이다.
+      if (error.code == 'popup-closed-by-user' || error.code == 'cancelled-popup-request') {
+        return;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(describeAuthError(error))));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(describeAuthError(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _linkingGoogle = false);
+    }
+  }
+
+  /// 웹 전용. [_linkGoogleAccount]로 걸어둔 연동을 해제하고, 곧바로 모든 기기에서
+  /// 로그아웃까지 함께 진행한다. 연동을 끊는 목적 자체가 대개 "이 Google 계정으로
+  /// 안드로이드에 로그인해 있는 세션의 접근을 지금 끊고 싶다"는 것이라, 연동 해제만
+  /// 해서는 그 기기의 이미 발급된 세션이 계속 유효한 채로 남는다(uid/이메일이 그대로라
+  /// unlink 자체는 토큰을 무효화하지 않음) — forceLogoutAllDevices를 같이 호출해야
+  /// forceLogoutAfter가 갱신되어 그 세션도 실제로 막힌다. unlink가 currentUser를
+  /// 참조하므로 forceLogoutAllDevices(내부에서 signOut까지 함)보다 반드시 먼저 실행한다.
+  Future<void> _unlinkGoogleAccount() async {
+    if (_signingOut) return;
+    final confirmed = await confirmAction(
+      context,
+      title: 'Google 계정 연동 해제',
+      message: 'Google 계정 연동을 해제하고, 이 기기를 포함해 로그인된 모든 기기에서 로그아웃됩니다.\n다시 로그인해야 합니다.',
+      confirmLabel: '해제',
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _signingOut = true);
+    try {
+      await widget.onBeforeSignOut?.call();
+    } catch (_) {}
+
+    if (!mounted) return;
+    try {
+      ref.read(sessionInvalidationHandledProvider.notifier).set(true);
+      await ref.read(authServiceProvider).unlinkGoogleAccount();
+      await ref.read(authServiceProvider).forceLogoutAllDevices();
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      ref.read(sessionInvalidationHandledProvider.notifier).set(false);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(describeAuthError(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _signingOut = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // 이 다이얼로그 안에서 로그인이 완료되면(이메일 링크 확인 등) 자동으로 닫아준다.
@@ -109,6 +182,7 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
     final email = ref.watch(authEmailProvider).value;
     final signedIn = authState.value != null;
     final colorScheme = Theme.of(context).colorScheme;
+    final androidAccessEnabled = ref.watch(androidAccessEnabledProvider).value ?? false;
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -135,6 +209,11 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
                       signingOut: _signingOut,
                       onSignOut: _signOut,
                       onForceLogoutAllDevices: _forceLogoutAllDevices,
+                      isGoogleLinked: ref.read(authServiceProvider).isGoogleAccountLinked,
+                      androidAccessEnabled: androidAccessEnabled,
+                      linkingGoogle: _linkingGoogle,
+                      onLinkGoogleAccount: _linkGoogleAccount,
+                      onUnlinkGoogleAccount: _unlinkGoogleAccount,
                     ),
             ),
           ],
@@ -150,12 +229,22 @@ class _SignedInContent extends StatelessWidget {
     required this.signingOut,
     required this.onSignOut,
     required this.onForceLogoutAllDevices,
+    required this.isGoogleLinked,
+    required this.androidAccessEnabled,
+    required this.linkingGoogle,
+    required this.onLinkGoogleAccount,
+    required this.onUnlinkGoogleAccount,
   });
 
   final String? email;
   final bool signingOut;
   final VoidCallback onSignOut;
   final VoidCallback onForceLogoutAllDevices;
+  final bool isGoogleLinked;
+  final bool androidAccessEnabled;
+  final bool linkingGoogle;
+  final VoidCallback onLinkGoogleAccount;
+  final VoidCallback onUnlinkGoogleAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -170,6 +259,38 @@ class _SignedInContent extends StatelessWidget {
           style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 16),
+        // 안드로이드는 이메일 링크를 받지 않고 Google 로그인만 쓰므로, 이 회사메일
+        // 계정으로 안드로이드에서도 같은 데이터를 보려면 여기서 미리 Google 계정을
+        // 연동해둬야 한다(웹에서만 가능한 1회성 설정 — sign_in_prompt.dart 참고). 이미
+        // 연동된 상태에서 같은 버튼을 다시 누르면 해제로 동작한다(연동/해제 확인
+        // 다이얼로그는 AccountDialog가 담당).
+        //
+        // 관리자가 아직 이 계정에 안드로이드 접근을 안 열어줬으면(androidAccessEnabled
+        // false) 섹션 자체를 안 보여준다 — 다만 이미 연동돼 있는 경우(이 필드가 생기기
+        // 전에 연동한 계정 등)는 예외로 계속 보여줘서, 해제할 방법이 없어지는 일이 없게 한다.
+        if (kIsWeb && (androidAccessEnabled || isGoogleLinked)) ...[
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed: (linkingGoogle || signingOut)
+                  ? null
+                  : (isGoogleLinked ? onUnlinkGoogleAccount : onLinkGoogleAccount),
+              icon: (linkingGoogle || (isGoogleLinked && signingOut))
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(isGoogleLinked ? Icons.link_off : Icons.link),
+              label: Text(isGoogleLinked ? 'Google 계정 연동 해제하기' : 'Google 계정 연동하기'),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
