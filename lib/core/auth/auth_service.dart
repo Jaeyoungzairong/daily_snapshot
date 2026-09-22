@@ -131,17 +131,32 @@ class AuthService {
   ///
   /// 이 브라우저에 저장된 이메일이 없으면(다른 기기에서 링크를 열었거나, 발송 한도를
   /// 우회하려고 관리자가 직접 생성한 링크를 열었을 때) [emailOverride]를 대신 사용한다.
+  ///
+  /// 저장된 이메일(`_pendingEmailKey`)은 실제로 로그인에 성공했을 때만 지운다 — 승인
+  /// 확인이나 `signInWithEmailLink` 자체가 일시적 오류(네트워크 등)로 실패해도 링크는
+  /// 아직 유효하므로, 이 값을 남겨둬야 같은 링크로 "로그인 계속하기"를 다시 시도할 수
+  /// 있다. 미리 지워버리면 재시도할 방법이 없어 완전히 새 링크를 다시 받아야 했다.
   Future<void> completeSignInIfLink(String link, {String? emailOverride}) async {
     if (!isSignInLink(link)) return;
 
     final stored = await _store.getString(_pendingEmailKey);
-    await _store.remove(_pendingEmailKey);
     final email = stored ?? emailOverride?.trim().toLowerCase();
     if (email == null || email.isEmpty) {
       throw const PendingEmailNotFoundException();
     }
 
+    // 승인 여부를 signInWithEmailLink보다 먼저 확인한다 — sendSignInLink와 같은 이유로,
+    // 미승인 상태에서는 (아직 유효한) 링크를 소모하지 않는다. 승인되면 저장된 이메일이
+    // 그대로 남아 있으니 같은 링크로 다시 "로그인 계속하기"를 누를 수 있다.
+    if (!await _isEmailApproved(email)) {
+      throw const NotApprovedException();
+    }
+
     await _auth.signInWithEmailLink(email: email, emailLink: link);
+    await _store.remove(_pendingEmailKey);
+    // 사전 확인과 실제 로그인 사이의 좁은 시간차에 승인이 해제됐을 수 있어 다시 한번
+    // 확인한다(방어적 재검증 — _isEmailApproved를 사전에 이미 통과했으므로 대부분
+    // 통과한다).
     await _ensureApproved();
   }
 

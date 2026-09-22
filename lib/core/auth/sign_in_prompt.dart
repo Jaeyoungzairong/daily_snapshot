@@ -46,6 +46,31 @@ String describeAuthError(Object error) {
   return '로그인 처리 중 문제가 발생했습니다: $error';
 }
 
+/// 이메일 링크 로그인 완료 실패가 "이 링크로는 더 시도해도 소용없는" 종료 오류인지 —
+/// 종료 오류면 링크 모드를 나가고 URL도 정리해 완전히 새 링크를 요청하게 한다. 그 외(특히
+/// 네트워크 등 일시적 오류, 그리고 아직 링크 자체는 소모되지 않은 [NotApprovedException])는
+/// 링크 모드와 URL을 그대로 유지해 "로그인 계속하기"를 다시 누를 수 있게 한다.
+///
+/// [hadStoredEmail]은 이 브라우저에 저장된 이메일로 시도했는지(true) 아니면 사용자가 직접
+/// 입력한 이메일로 시도했는지(false)를 나타낸다 — `invalid-action-code`는 수동 입력
+/// 경로에서는 오타일 가능성이 있어(이메일이 링크가 발급된 것과 다르면 이 코드가 난다)
+/// 재시도를 허용하고, 저장된 이메일(오타 가능성 없음)로도 이 에러가 나면 링크 자체가
+/// 문제라고 보고 종료 오류로 취급한다.
+bool isTerminalSignInLinkError(Object error, {required bool hadStoredEmail}) {
+  // 저장된 이메일도, 사용자가 입력한 이메일도 없어 애초에 시도할 방법이 없는 경우 —
+  // 이 브라우저에서는 더 재시도할 수단이 없으므로 새 링크가 필요하다.
+  if (error is PendingEmailNotFoundException) return true;
+  if (error is! FirebaseAuthException) return false;
+  switch (error.code) {
+    case 'expired-action-code':
+      return true;
+    case 'invalid-action-code':
+      return hadStoredEmail;
+    default:
+      return false;
+  }
+}
+
 class SignInPrompt extends ConsumerStatefulWidget {
   const SignInPrompt({super.key});
 
@@ -112,6 +137,7 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
   Future<void> _confirmSignIn() async {
     if (_confirming) return;
     String? manualEmail;
+    final hadStoredEmail = _pendingEmail != null;
     if (_pendingEmail == null) {
       manualEmail = _manualEmailController.text.trim();
       if (manualEmail.isEmpty) return;
@@ -124,14 +150,21 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
       await ref
           .read(authServiceProvider)
           .completeSignInIfLink(_detectedLink!, emailOverride: manualEmail);
+      // 성공했을 때만 URL의 로그인 정보를 정리한다 — 여기 도달했다는 건 로그인이 끝났다는
+      // 뜻이라 더 이상 필요 없다.
+      clearSignInLinkFromUrl();
     } catch (error) {
       if (!mounted) return;
+      // 종료 오류(링크 자체가 못 쓰게 됨)만 링크 모드를 나가고 URL을 정리한다. 그 외(일시적
+      // 오류, 아직 승인 대기 중이라 링크가 소모되지 않은 경우)는 링크 모드를 유지해 사용자가
+      // "로그인 계속하기"를 다시 누를 수 있게 한다.
+      final terminal = isTerminalSignInLinkError(error, hadStoredEmail: hadStoredEmail);
       setState(() {
-        _isLinkMode = false;
+        if (terminal) _isLinkMode = false;
         _errorMessage = describeAuthError(error);
       });
+      if (terminal) clearSignInLinkFromUrl();
     } finally {
-      clearSignInLinkFromUrl();
       if (mounted) setState(() => _confirming = false);
     }
   }

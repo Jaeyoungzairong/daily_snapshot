@@ -33,8 +33,11 @@ service firebase.storage {
         && isSessionFresh(request.auth.token.email)
         && request.resource.size <= 150 * 1024 * 1024;
 
+      // isAdmin은 관리자 문서에만 명시적으로 있고 나머지 사용자 문서엔 필드 자체가 없을 수
+      // 있다 — firestore.rules의 같은 필드 처리와 동일하게 .get(key, 기본값)을 써서 없는
+      // 필드를 직접 점(.) 표기로 읽다가 규칙 평가가 에러로 실패하는 것을 피한다.
       allow delete: if request.auth != null && isSessionFresh(request.auth.token.email) && (
-        firestore.get(/databases/(default)/documents/admin_allowed_emails/$(request.auth.token.email)).data.isAdmin == true
+        firestore.get(/databases/(default)/documents/admin_allowed_emails/$(request.auth.token.email)).data.get('isAdmin', false) == true
         || firestore.get(/databases/(default)/documents/shared_files/$(fileId)).data.uploadedByEmail == request.auth.token.email
       );
     }

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../core/network/api_client.dart';
 import 'file_entry.dart';
 
 /// 공유 파일함을 Firestore(메타데이터)+Storage(실 파일)에 저장·조회한다.
@@ -18,6 +20,12 @@ class FileRepository {
 
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
+
+  // 150MB까지 오래 걸리는 전송이라 요청 전체에 하나의 시간 제한을 둘 수는 없다 — 대신 응답
+  // 헤더를 기다리는 동안과, 전송 중 다음 청크가 이 시간 안에 오지 않으면(정체) 끊는다.
+  // 정상적으로 데이터가 계속 오는 한(청크마다 타이머가 갱신됨) 파일 크기와 무관하게 끊기지
+  // 않는다.
+  static const Duration _stallTimeout = Duration(seconds: 30);
 
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('shared_files');
@@ -64,18 +72,45 @@ class FileRepository {
   }) async {
     final url = await getDownloadUrl(storagePath);
     final client = http.Client();
+    final abort = Completer<void>();
+    Timer? stallTimer;
+    // 응답 헤더를 기다리는 동안에도, 청크를 받을 때마다도 이 타이머를 다시 건다 — 어느
+    // 시점에서든 _stallTimeout 동안 진전이 없으면 요청을 실제로 취소한다(Future.timeout과
+    // 달리 연결 자체가 끊겨 리소스가 새지 않는다).
+    void resetStallTimer() {
+      stallTimer?.cancel();
+      stallTimer = Timer(_stallTimeout, () {
+        if (!abort.isCompleted) abort.complete();
+      });
+    }
+
     try {
-      final response = await client.send(http.Request('GET', Uri.parse(url)));
+      resetStallTimer();
+      final http.StreamedResponse response;
+      try {
+        response = await client.send(
+          http.AbortableRequest('GET', Uri.parse(url), abortTrigger: abort.future),
+        );
+      } on http.RequestAbortedException {
+        throw ApiException('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.');
+      }
+
       final total = response.contentLength;
       final bytes = <int>[];
       var received = 0;
-      await for (final chunk in response.stream) {
-        bytes.addAll(chunk);
-        received += chunk.length;
-        onProgress?.call(received, total);
+      try {
+        await for (final chunk in response.stream) {
+          resetStallTimer();
+          bytes.addAll(chunk);
+          received += chunk.length;
+          onProgress?.call(received, total);
+        }
+      } on http.RequestAbortedException {
+        throw ApiException('다운로드가 지연되어 중단되었습니다. 잠시 후 다시 시도해주세요.');
       }
       return Uint8List.fromList(bytes);
     } finally {
+      stallTimer?.cancel();
       client.close();
     }
   }

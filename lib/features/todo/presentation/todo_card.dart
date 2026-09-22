@@ -29,8 +29,12 @@ class _TodoCardState extends ConsumerState<TodoCard> {
   Future<void> _addItem() async {
     final text = _newItemController.text;
     if (text.trim().isEmpty) return;
-    final added = await ref.read(todoListProvider.notifier).add(text);
-    if (!mounted) return;
+    var added = false;
+    final saved = await runTodoWrite(context, () async {
+      added = await ref.read(todoListProvider.notifier).add(text);
+    });
+    // 저장에 실패하면 runTodoWrite가 이미 안내했고, 입력창도 비우지 않아 다시 시도할 수 있다.
+    if (!saved || !mounted) return;
     if (added) {
       _newItemController.clear();
     } else {

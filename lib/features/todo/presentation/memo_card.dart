@@ -7,6 +7,7 @@ import '../../../core/widgets/dashboard_card.dart';
 import '../../../core/widgets/loading_error_view.dart';
 import '../../../core/widgets/signed_out_placeholder.dart';
 import '../application/todo_provider.dart';
+import '../data/memo_item.dart';
 import 'memo_section.dart';
 import 'todo_error.dart';
 
@@ -48,10 +49,13 @@ class _MemoCardState extends ConsumerState<MemoCard> {
   }
 
   Future<void> _addMemo() async {
-    final memo = await ref.read(todoMemoProvider.notifier).addMemo();
-    if (!mounted) return;
+    MemoItem? memo;
+    final saved = await runTodoWrite(context, () async {
+      memo = await ref.read(todoMemoProvider.notifier).addMemo();
+    });
+    if (!saved || !mounted) return;
     if (memo != null) {
-      _selectMemo(memo.id);
+      _selectMemo(memo!.id);
     } else {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('메모는 최대 $maxMemoCount개까지 만들 수 있습니다.')));
@@ -61,13 +65,19 @@ class _MemoCardState extends ConsumerState<MemoCard> {
   Future<void> _moveSelectedMemo(int delta) async {
     final id = _selectedMemoId;
     if (id == null) return;
-    await ref.read(todoMemoProvider.notifier).moveMemo(id, delta);
+    await runTodoWrite(context, () => ref.read(todoMemoProvider.notifier).moveMemo(id, delta));
   }
 
   Future<void> _deleteSelectedMemo() async {
     final id = _selectedMemoId;
     if (id == null) return;
-    await ref.read(todoMemoProvider.notifier).removeMemo(id);
+    final saved = await runTodoWrite(
+      context,
+      () => ref.read(todoMemoProvider.notifier).removeMemo(id),
+    );
+    // 삭제 저장에 실패하면 이미 안내했고 메모도 그대로 남아 있으므로 선택 상태를 건드리지
+    // 않는다. 삭제 확인 다이얼로그·네트워크 왕복 중 카드가 사라졌을 수도 있어 mounted도 확인한다.
+    if (!saved || !mounted) return;
     final remaining = ref.read(todoMemoProvider).value ?? [];
     if (remaining.isEmpty) {
       setState(() {
@@ -96,6 +106,19 @@ class _MemoCardState extends ConsumerState<MemoCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final authState = ref.watch(authUidProvider);
+
+    // 디바운스 자동저장은 타이머 콜백에서 실행돼 예외를 화면까지 전달할 수 없어, 실패하면
+    // 이 카운터가 올라간다 — 입력한 내용은 화면에 그대로 남아 있고, 이후 메모 전환/로그아웃
+    // 때 한 번 더 저장을 시도한다.
+    ref.listen(memoSaveFailureProvider, (previous, next) {
+      if (next > (previous ?? 0)) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(content: Text('메모를 저장하지 못했습니다. 네트워크 연결을 확인해주세요.')),
+          );
+      }
+    });
 
     // 로그아웃(uid가 null이 됨)하면 이전 세션의 메모 선택 상태가 다음 로그인 때
     // 잘못 남아있지 않도록 초기화한다.

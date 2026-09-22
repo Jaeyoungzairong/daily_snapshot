@@ -227,6 +227,14 @@ class _FileRow extends ConsumerWidget {
   Future<void> _download(BuildContext context, WidgetRef ref) async {
     try {
       await ref.read(fileDownloadProvider.notifier).download(entry);
+      if (!context.mounted) return;
+      // 웹은 브라우저가 자체적으로 다운로드 완료를 보여주므로(다운로드 바, 알림 등)
+      // 별도 안내가 필요 없다 — 안드로이드만 저장 성공을 알 수 있는 유일한 신호라 알려준다.
+      if (!kIsWeb) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('"${entry.name}" 파일을 저장했습니다.')));
+      }
     } catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context)
