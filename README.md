@@ -69,7 +69,7 @@ APK) 두 플랫폼을 지원하며, 로그인·데이터 동기화·파일 저�
 
 ### 공유 파일함
 - Firebase Storage + Firestore로 파일을 올리고 받는 기능. 계정별 저장소가 아니라 승인된 모든
-  사용자가 함께 쓰는 공유 풀(파일 하나당 최대 100MB, 전체 최대 30개)
+  사용자가 함께 쓰는 공유 풀(파일 하나당 최대 150MB, 전체 최대 30개)
 - 로그인 후 이용 가능(플랫폼별 로그인 방법은 위 "로그인 / 계정" 참고). 업로드·다운로드는 승인된
   사용자 누구나 가능하고(미리보기는 웹 전용, 아래 참고), 삭제는 관리자(승인 명단의 `isAdmin: true`)는
   전체 파일을, 일반 사용자는 본인이 올린 파일만 가능
@@ -97,7 +97,8 @@ APK) 두 플랫폼을 지원하며, 로그인·데이터 동기화·파일 저�
   승인 여부를 미리 확인할 수 있게 하고, 목록 조회(`list`)는 막아 전체 승인자 목록이 노출되지 않게
   함. 같은 문서의 `isAdmin` 필드로 파일 삭제 등 관리자 전용 동작을, `androidAccessEnabled` 필드로
   Google 계정 연동(안드로이드 접근) 허용 여부를 구분
-- 파일 저장: `firebase_storage`(공유 파일함 실 파일 저장) + `file_picker`(파일 선택)
+- 파일 저장: `firebase_storage`(공유 파일함 실 파일 저장) + `file_picker`(파일 선택) + `file_saver`
+  (다운로드한 바이트를 기기에 저장 — 웹은 자체 Blob 다운로드를 쓰고, 안드로이드만 이 패키지를 씀)
 - 로컬 저장소: `shared_preferences` (공통 `KeyValueStore` 추상화로 감싸 테스트에서 인메모리로 대체)
 - 앱 버전 표시: `package_info_plus` — 웹은 `flutter build web`이 생성하는 `version.json`, 안드로이드는
   설치된 앱의 네이티브 버전 정보를 읽어와 별도 주입 없이 `pubspec.yaml`의 `version`을 그대로 표시
@@ -176,8 +177,15 @@ dhttpd --path build/web --port 8766
 
 ### 안드로이드 빌드
 ```bash
-flutter build apk --dart-define-from-file=lib/core/config/secrets.json
+flutter build apk
 ```
+`--dart-define-from-file`은 안드로이드에는 필요 없습니다. 이 값이 주입하는 `KMA_SERVICE_KEY`는
+날씨 기능([kma_weather_repository.dart](lib/features/weather/data/kma_weather_repository.dart))만
+쓰는데, 날씨 카드 자체가 `if (kIsWeb)`로 안드로이드에서는 아예 빌드되지 않기 때문입니다
+([dashboard_page.dart](lib/features/dashboard/presentation/dashboard_page.dart) 참고). Firebase
+설정도 dart-define이 아니라 `google-services.json`에서 오므로 로그인·동기화와도 무관합니다.
+(안드로이드에 날씨 기능이 추가되면 이 문단도 같이 갱신해야 합니다.)
+
 안드로이드는 로그인 방식이 웹과 다릅니다(이메일 링크 대신 Google Sign-In, 위 "로그인 / 계정"
 참고). 로컬에서 로그인까지 테스트하려면:
 - 사용할 Firebase 프로젝트에 안드로이드 앱을 추가하고, 디버그/릴리스 각각의 서명 키
@@ -232,6 +240,10 @@ GitHub의 Releases 기능으로 같은 버전(`v26.8.31`)의 태그를 남기며
 - **공유 파일함 개수 상한(30개) 클라이언트에서만 확인함.** 두 탭/기기가 동시에 29번째
   업로드를 시도하면 둘 다 통과해 상한을 넘길 수 있음(용량 상한은 서버 규칙에도 있어 그쪽은
   안전). 서버 규칙에서 개수까지 확인하려면 별도 설계 필요.
+- **할 일(30개)/메모(15개) 개수 상한도 같은 이유로 클라이언트에서만 확인함.** 다만 uid별
+  개인 데이터라 동시 접속 자체가 드물고, 상한을 살짝 넘겨도 문서 크기가 Firestore 1MiB
+  제한에 전혀 근접하지 않아(수십 개 더 늘어도 수 KB 수준) 실질적 피해가 없어 우선순위를
+  낮게 둠(2026-09-18 검토).
 - **파일 미리보기/다운로드 URL이 영구 접근 가능한 토큰 방식.** 한 번 발급된 URL은 이후
   승인이 해제되거나(`isActive:false`) 강제 로그아웃되어도 계속 유효함(Firebase Storage
   `getDownloadURL()`의 표준 동작). 접근을 진짜로 회수하려면 짧은 만료 시간의 서명 URL 등

@@ -29,6 +29,15 @@ String describeAuthError(Object error) {
         return '이 Google 계정은 이미 다른 계정에 연동되어 있습니다.';
       case 'provider-already-linked':
         return '이미 이 계정에 Google 계정이 연동되어 있습니다.';
+      // 이 Google 계정의 이메일이 이미 다른 방식(대개 이메일 링크)으로 가입된 계정에
+      // 속해 있을 때 발생한다 — 흔히 회사 이메일이 곧 Google 계정인 경우(Google
+      // Workspace), 웹에서 연동을 먼저 하지 않고 안드로이드에서 바로 Google 로그인을
+      // 시도하면 이 에러가 난다. 연동 중(웹)에도 같은 코드가 날 수 있어(고른 Google
+      // 계정이 이미 다른 계정에 쓰이는 중) 두 상황을 모두 아우르는 안내를 준다.
+      case 'account-exists-with-different-credential':
+        return '이 이메일은 이미 다른 방식으로 가입되어 있습니다. 안드로이드라면 웹에서 먼저 '
+            '이 계정으로 로그인한 뒤 계정 다이얼로그에서 Google 계정을 연동해주세요. 연동 '
+            '중이었다면 다른 Google 계정을 선택해주세요.';
     }
   }
   if (error is GoogleSignInException) {

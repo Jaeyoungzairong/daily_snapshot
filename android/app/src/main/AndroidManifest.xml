@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Firebase Auth/Firestore/Storage, KMA/환율 API 등 네트워크 호출에 필요하다.
+         debug/AndroidManifest.xml에만 있던 것과 별개로, 여기(main)에 없으면 release
+         빌드(flutter build apk 기본값)에는 이 권한이 전혀 포함되지 않아 네트워크 기능이
+         전부 실패한다. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="데일리 스냅샷"
         android:name="${applicationName}"

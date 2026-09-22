@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/page_reload.dart';
 import '../../../core/widgets/dashboard_card.dart';
 import '../../../core/widgets/loading_error_view.dart';
 import '../../../core/widgets/signed_out_placeholder.dart';
@@ -115,7 +114,13 @@ class _MemoCardState extends ConsumerState<MemoCard> {
       accentColor: theme.extension<AppAccentColors>()?.memo,
       child: authState.when(
         loading: () => const LoadingView(),
-        error: (error, _) => ErrorView(message: error.toString(), onRetry: reloadPage),
+        // 예전엔 웹의 페이지 새로고침(reloadPage)에 기댔는데, 안드로이드는 이 함수가
+        // 빈 구현이라 버튼을 눌러도 아무 반응이 없었다 — authServiceProvider를
+        // invalidate하면 인증 스트림 구독 자체를 다시 만들어서 두 플랫폼 모두에서 동작한다.
+        error: (error, _) => ErrorView(
+          message: error.toString(),
+          onRetry: () => ref.invalidate(authServiceProvider),
+        ),
         data: (uid) => uid == null ? const SignedOutPlaceholder() : _buildSignedInContent(),
       ),
     );
@@ -126,7 +131,12 @@ class _MemoCardState extends ConsumerState<MemoCard> {
 
     return memosAsync.when(
       loading: () => const LoadingView(),
-      error: (error, _) => ErrorView(message: describeTodoDataError(error), onRetry: reloadPage),
+      // 같은 이유로 todoMemoProvider만 다시 구독하도록 invalidate한다 — 전체 페이지를
+      // 새로고침하지 않아도 되고 안드로이드에서도 동일하게 동작한다.
+      error: (error, _) => ErrorView(
+        message: describeTodoDataError(error),
+        onRetry: () => ref.invalidate(todoMemoProvider),
+      ),
       data: (memos) {
         // 메모 목록이 처음 도착했을 때 한 번만 첫 메모를 선택해 채운다(그 이후엔 사용자가
         // 선택/입력 중인 내용을 덮어쓰면 안 되므로). build() 안에서 직접 확인해야
