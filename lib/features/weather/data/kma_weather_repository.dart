@@ -50,11 +50,14 @@ class KmaWeatherRepository implements WeatherRepository {
       valueKey: 'fcstValue',
     );
 
-    return buildWeatherModel(
-      cityName: city.displayLabel,
-      now: now,
-      currentByCategory: {for (final item in currentItems) item.category: item.value},
-      forecastItems: forecastItems,
+    return parseApiResponse(
+      () => buildWeatherModel(
+        cityName: city.displayLabel,
+        now: now,
+        currentByCategory: {for (final item in currentItems) item.category: item.value},
+        forecastItems: forecastItems,
+      ),
+      message: '날씨 데이터의 형식이 올바르지 않습니다.',
     );
   }
 
@@ -79,27 +82,29 @@ class KmaWeatherRepository implements WeatherRepository {
     );
     final json = await _apiClient.getJson(uri);
 
-    final header = (json['response'] as Map<String, dynamic>)['header'] as Map<String, dynamic>;
-    if (header['resultCode'] != '00') {
-      throw ApiException('기상청 API 오류: ${header['resultMsg']}');
-    }
+    return parseApiResponse(() {
+      final header = (json['response'] as Map<String, dynamic>)['header'] as Map<String, dynamic>;
+      if (header['resultCode'] != '00') {
+        throw ApiException('기상청 API 오류: ${header['resultMsg']}');
+      }
 
-    final body = (json['response'] as Map<String, dynamic>)['body'] as Map<String, dynamic>;
-    // 결과가 없을 때 items가 빈 문자열로 오는 경우가 있어(공공데이터포털 흔한 케이스) 방어한다.
-    final itemsField = body['items'];
-    final rawItems = itemsField is Map<String, dynamic>
-        ? (itemsField['item'] as List? ?? const [])
-        : const [];
+      final body = (json['response'] as Map<String, dynamic>)['body'] as Map<String, dynamic>;
+      // 결과가 없을 때 items가 빈 문자열로 오는 경우가 있어(공공데이터포털 흔한 케이스) 방어한다.
+      final itemsField = body['items'];
+      final rawItems = itemsField is Map<String, dynamic>
+          ? (itemsField['item'] as List? ?? const [])
+          : const [];
 
-    return rawItems.map((e) {
-      final map = e as Map<String, dynamic>;
-      return KmaItem(
-        category: map['category'] as String,
-        fcstDate: (map['fcstDate'] ?? map['baseDate']) as String,
-        fcstTime: (map['fcstTime'] ?? map['baseTime']) as String,
-        value: map[valueKey] as String,
-      );
-    }).toList();
+      return rawItems.map((e) {
+        final map = e as Map<String, dynamic>;
+        return KmaItem(
+          category: map['category'] as String,
+          fcstDate: (map['fcstDate'] ?? map['baseDate']) as String,
+          fcstTime: (map['fcstTime'] ?? map['baseTime']) as String,
+          value: map[valueKey] as String,
+        );
+      }).toList();
+    }, message: '날씨 데이터의 형식이 올바르지 않습니다.');
   }
 }
 

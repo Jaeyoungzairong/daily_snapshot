@@ -12,6 +12,21 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// 외부 API 응답을 파싱하는 [parse] 안에서 응답 구조가 예상과 다를 때(필드 누락, 타입 불일치,
+/// 날짜 형식 오류) 나는 TypeError/FormatException을 [ApiException]으로 바꿔 던진다 — 그대로
+/// 두면 "Null check operator used on a null value" 같은 Dart 내부 메시지가 사용자 화면에
+/// 그대로 노출된다. 이미 [ApiException]으로 던진 오류(예: API가 알려준 오류 코드)는 손대지 않고
+/// 그대로 통과한다.
+T parseApiResponse<T>(T Function() parse, {String message = '받아온 데이터의 형식이 올바르지 않습니다.'}) {
+  try {
+    return parse();
+  } on TypeError {
+    throw ApiException(message);
+  } on FormatException {
+    throw ApiException(message);
+  }
+}
+
 class ApiClient {
   // timeout은 테스트에서 짧게 줄여 재정의할 수 있도록 공개 이름(_timeout과 다름)을 유지한다.
   ApiClient({http.Client? client, Duration timeout = const Duration(seconds: 15)})

@@ -23,6 +23,7 @@ class _MemoCardState extends ConsumerState<MemoCard> {
   final TextEditingController _memoContentController = TextEditingController();
   bool _memoInitialized = false;
   String? _selectedMemoId;
+  bool _retryingSave = false;
 
   @override
   void dispose() {
@@ -88,6 +89,26 @@ class _MemoCardState extends ConsumerState<MemoCard> {
     } else {
       _selectMemo(remaining.first.id);
     }
+  }
+
+  Future<void> _retrySave() async {
+    if (_retryingSave) return;
+    setState(() => _retryingSave = true);
+    final notifier = ref.read(todoMemoProvider.notifier);
+    await notifier.flushPending();
+    if (!mounted) return;
+    setState(() => _retryingSave = false);
+    // 계속 실패하면 memoSaveFailureProvider는 이미 실패 상태라 다시 안내하지 않으므로, 사용자가
+    // 누른 버튼의 결과는 여기서 직접 알려준다.
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            notifier.hasUnsavedEdits ? '아직 저장하지 못했습니다. 네트워크 연결을 확인해주세요.' : '메모를 저장했습니다.',
+          ),
+        ),
+      );
   }
 
   void _onMemoTitleChanged(String value) {
@@ -174,19 +195,67 @@ class _MemoCardState extends ConsumerState<MemoCard> {
             _memoContentController.text = memos.first.content;
           }
         }
-        return MemoSection(
-          memos: memos,
-          selectedMemoId: _selectedMemoId,
-          titleController: _memoTitleController,
-          contentController: _memoContentController,
-          onSelect: _selectMemo,
-          onAdd: _addMemo,
-          onDelete: _deleteSelectedMemo,
-          onMove: _moveSelectedMemo,
-          onTitleChanged: _onMemoTitleChanged,
-          onContentChanged: _onMemoContentChanged,
+        final hasUnsavedEdits = ref.watch(memoUnsavedEditsProvider);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (hasUnsavedEdits) ...[
+              _UnsavedEditsBanner(retrying: _retryingSave, onRetry: _retrySave),
+              const SizedBox(height: 12),
+            ],
+            MemoSection(
+              memos: memos,
+              selectedMemoId: _selectedMemoId,
+              titleController: _memoTitleController,
+              contentController: _memoContentController,
+              onSelect: _selectMemo,
+              onAdd: _addMemo,
+              onDelete: _deleteSelectedMemo,
+              onMove: _moveSelectedMemo,
+              onTitleChanged: _onMemoTitleChanged,
+              onContentChanged: _onMemoContentChanged,
+            ),
+          ],
         );
       },
+    );
+  }
+}
+
+/// 자동저장에 실패한 편집이 남아 있는 동안 계속 보이는 안내. 스낵바는 몇 초 뒤 사라져서, 그걸
+/// 놓치고 탭을 닫으면 저장 안 된 내용을 모른 채 잃게 된다.
+class _UnsavedEditsBanner extends StatelessWidget {
+  const _UnsavedEditsBanner({required this.retrying, required this.onRetry});
+
+  final bool retrying;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: colors.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_outlined, size: 18, color: colors.onErrorContainer),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '저장되지 않은 메모 변경 사항이 있습니다.',
+              style: TextStyle(color: colors.onErrorContainer),
+            ),
+          ),
+          TextButton(
+            onPressed: retrying ? null : onRetry,
+            style: TextButton.styleFrom(foregroundColor: colors.onErrorContainer),
+            child: const Text('다시 저장'),
+          ),
+        ],
+      ),
     );
   }
 }

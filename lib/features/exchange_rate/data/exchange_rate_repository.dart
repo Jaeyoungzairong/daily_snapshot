@@ -21,19 +21,21 @@ class ExchangeRateRepository {
 
   Future<List<CurrencyKrwRate>> fetchLatestRates() async {
     final json = await _apiClient.getJson(_latestUri);
-    final rates = (json['rates'] as Map<String, dynamic>).map(
-      (key, value) => MapEntry(key, (value as num).toDouble()),
-    );
-    final updatedAt = DateTime.fromMillisecondsSinceEpoch(
-      (json['time_last_update_unix'] as num).toInt() * 1000,
-      isUtc: true,
-    );
+    return parseApiResponse(() {
+      final rates = (json['rates'] as Map<String, dynamic>).map(
+        (key, value) => MapEntry(key, (value as num).toDouble()),
+      );
+      final updatedAt = DateTime.fromMillisecondsSinceEpoch(
+        (json['time_last_update_unix'] as num).toInt() * 1000,
+        isUtc: true,
+      );
 
-    return CurrencyKrwRate.fromPivotRates(
-      pivotRates: rates,
-      date: Formatters.date(updatedAt),
-      pivotCode: _pivot,
-    );
+      return CurrencyKrwRate.fromPivotRates(
+        pivotRates: rates,
+        date: Formatters.date(updatedAt),
+        pivotCode: _pivot,
+      );
+    }, message: '환율 데이터의 형식이 올바르지 않습니다.');
   }
 
   Future<List<ExchangeRateHistoryPoint>> fetchRateHistory({
@@ -49,10 +51,13 @@ class ExchangeRateRepository {
         .replace(queryParameters: {'base': _pivot, 'symbols': symbols});
     final json = await _apiClient.getJson(uri);
 
-    return ExchangeRateHistoryPoint.fromPivotRatesByDate(
-      ratesByDate: json['rates'] as Map<String, dynamic>,
-      currency: currency,
-      pivotCode: _pivot,
+    return parseApiResponse(
+      () => ExchangeRateHistoryPoint.fromPivotRatesByDate(
+        ratesByDate: json['rates'] as Map<String, dynamic>,
+        currency: currency,
+        pivotCode: _pivot,
+      ),
+      message: '환율 기록 데이터의 형식이 올바르지 않습니다.',
     );
   }
 }

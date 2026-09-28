@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/network/api_retry.dart';
 import '../data/currency_catalog.dart';
 import '../data/exchange_rate_model.dart';
 import '../data/exchange_rate_repository.dart';
@@ -13,7 +14,7 @@ final exchangeRateRepositoryProvider = Provider<ExchangeRateRepository>((ref) {
 final latestRatesProvider = FutureProvider<List<CurrencyKrwRate>>((ref) async {
   final repository = ref.watch(exchangeRateRepositoryProvider);
   return repository.fetchLatestRates();
-});
+}, retry: retryUnlessApiException);
 
 enum ChartPeriod {
   fourteenDays(14, '14일'),
@@ -60,4 +61,4 @@ final chartHistoryProvider =
     >((ref, args) async {
       final repository = ref.watch(exchangeRateRepositoryProvider);
       return repository.fetchRateHistory(currencyCode: args.$1, days: args.$2.days);
-    });
+    }, retry: retryUnlessApiException);

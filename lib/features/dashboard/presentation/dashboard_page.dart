@@ -1,5 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,6 +17,22 @@ import '../../todo/application/todo_provider.dart';
 import '../../todo/presentation/memo_card.dart';
 import '../../todo/presentation/todo_card.dart';
 import '../../weather/presentation/weather_card.dart';
+
+const double _gridCardMaxWidth = 560;
+const double _gridSpacing = 16;
+const double _pagePadding = 16;
+const double _contentMaxWidth = 1200;
+
+/// 넓은 화면(2열 그리드)에서 카드 하나의 폭. 카드는 최대 560px이지만, 그 폭으로 2열을 놓으려면
+/// 1136px이 필요해서 breakpoint(900px)와 그 사이 구간에서는 카드가 한 줄에 하나만 들어가 오히려
+/// 좁은 화면(Column, 카드가 화면 폭까지 늘어남)보다 카드가 좁아지고 오른쪽이 비는 문제가 있었다
+/// — 사용 가능한 폭에 맞춰 줄여서 breakpoint 이상에서는 항상 2열이 되게 한다. 소수 폭에서
+/// 부동소수 오차로 두 번째 카드가 다음 줄로 밀리지 않도록 내림한다.
+@visibleForTesting
+double dashboardGridCardWidth(double viewportWidth) {
+  final contentWidth = math.min(viewportWidth - 2 * _pagePadding, _contentMaxWidth);
+  return math.min(_gridCardMaxWidth, ((contentWidth - _gridSpacing) / 2).floorToDouble());
+}
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -67,10 +85,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     showDialog<void>(
       context: context,
       builder: (_) => AccountDialog(
-        // 로그아웃 직전, 아직 저장 안 된 메모 편집 내용을 flush한다. 대시보드가 이미
-        // TodoCard를 구성하는 조합 루트라 이 의존은 자연스럽고, core/auth 쪽으로는
-        // todo 전용 provider가 새어 들어가지 않는다.
-        onBeforeSignOut: () => ref.read(todoMemoProvider.notifier).flushPending(),
+        // 로그아웃 직전, 아직 저장 안 된 메모 편집 내용을 flush하고 모두 저장됐는지 알린다.
+        // 대시보드가 이미 TodoCard를 구성하는 조합 루트라 이 의존은 자연스럽고, core/auth
+        // 쪽으로는 todo 전용 provider가 새어 들어가지 않는다.
+        onBeforeSignOut: () async {
+          final memos = ref.read(todoMemoProvider.notifier);
+          await memos.flushPending();
+          return !memos.hasUnsavedEdits;
+        },
       ),
     );
   }
@@ -163,13 +185,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= _wideBreakpoint;
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(_pagePadding),
             child: Column(
               children: [
                 Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1200),
-                    child: isWide ? _buildGrid() : _buildColumn(),
+                    constraints: const BoxConstraints(maxWidth: _contentMaxWidth),
+                    child: isWide
+                        ? _buildGrid(dashboardGridCardWidth(constraints.maxWidth))
+                        : _buildColumn(),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -189,11 +213,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  Widget _buildGrid() {
+  Widget _buildGrid(double cardWidth) {
     return Wrap(
-      spacing: 16,
-      runSpacing: 16,
-      children: _cards.map((card) => SizedBox(width: 560, child: card)).toList(),
+      spacing: _gridSpacing,
+      runSpacing: _gridSpacing,
+      children: _cards.map((card) => SizedBox(width: cardWidth, child: card)).toList(),
     );
   }
 

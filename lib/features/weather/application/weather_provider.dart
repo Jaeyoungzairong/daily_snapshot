@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/data/key_value_store.dart';
+import '../../../core/network/api_retry.dart';
 import '../data/city_candidate.dart';
 import '../data/kma_weather_repository.dart';
 import '../data/weather_model.dart';
@@ -47,12 +49,13 @@ class SelectedCityNotifier extends Notifier<CityCandidate> {
   KeyValueStore get _resolvedStore => _store ??= _providedStore ?? SharedPreferencesKeyValueStore();
 
   /// 마지막으로 선택한 도시를 앱 시작(runApp) 전에 미리 읽어온다. 저장된 값이 없거나
-  /// 파싱에 실패하면 기본 도시를 쓴다.
+  /// 저장소를 읽을 수 없거나 파싱에 실패하면 기본 도시를 쓴다 — 이 함수는 main()에서
+  /// runApp 전에 await되므로, 여기서 예외가 새면 앱이 아예 시작되지 못한다.
   static Future<CityCandidate> loadInitial([KeyValueStore? store]) async {
-    final resolvedStore = store ?? SharedPreferencesKeyValueStore();
-    final raw = await resolvedStore.getString(_key);
-    if (raw == null) return _defaultCity;
     try {
+      final resolvedStore = store ?? SharedPreferencesKeyValueStore();
+      final raw = await resolvedStore.getString(_key);
+      if (raw == null) return _defaultCity;
       return CityCandidate.fromJson(jsonDecode(raw) as Map<String, dynamic>);
     } catch (_) {
       return _defaultCity;
@@ -64,7 +67,15 @@ class SelectedCityNotifier extends Notifier<CityCandidate> {
 
   void select(CityCandidate city) {
     state = city;
-    _resolvedStore.setString(_key, jsonEncode(city.toJson()));
+    unawaited(_persist(city));
+  }
+
+  // 저장에 실패해도 선택한 도시는 이미 화면에 반영됐고 다음 실행 때 기본 도시로 돌아갈
+  // 뿐이라 — 처리되지 않은 Future 오류로 남지 않게만 삼킨다.
+  Future<void> _persist(CityCandidate city) async {
+    try {
+      await _resolvedStore.setString(_key, jsonEncode(city.toJson()));
+    } catch (_) {}
   }
 }
 
@@ -72,7 +83,13 @@ final selectedCityProvider = NotifierProvider<SelectedCityNotifier, CityCandidat
   SelectedCityNotifier.new,
 );
 
-final weatherProvider = FutureProvider.family<WeatherModel, CityCandidate>((ref, city) async {
+// autoDispose: 도시마다 예보 데이터(시간별 24개 + 일별)가 통째로 캐시되는데, 장시간 탭을 켜둔 채
+// 도시를 여러 번 바꾸거나 "내 위치로 찾기"를 반복해도 지금 보이지 않는 도시의 캐시가 세션 내내
+// 쌓이지 않게 한다. 대신 이전에 봤던 도시로 되돌아가면 다시 조회한다.
+final weatherProvider = FutureProvider.autoDispose.family<WeatherModel, CityCandidate>((
+  ref,
+  city,
+) async {
   final repository = ref.watch(weatherRepositoryProvider);
   return repository.fetchWeather(city);
-});
+}, retry: retryUnlessApiException);
