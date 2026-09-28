@@ -183,7 +183,10 @@ class FileDownloadNotifier extends Notifier<DownloadProgress?> {
           );
         },
       );
-      saveBytes(bytes, fileName: entry.name, mimeType: entry.contentType);
+      // await 없이 호출하면(안드로이드는 실제 파일 I/O라 비동기) 저장공간 부족 등으로 실패해도
+      // 아무도 그 예외를 기다리지 않아 호출부(file_card.dart)의 catch까지 전달되지 않았다 —
+      // 사용자는 진행률만 사라지고 실패 사실을 전혀 알 수 없었다.
+      await saveBytes(bytes, fileName: entry.name, mimeType: entry.contentType);
     } finally {
       state = null;
     }

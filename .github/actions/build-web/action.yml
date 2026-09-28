@@ -22,7 +22,5 @@ runs:
     - name: Build web
       shell: bash
       run: |
-        APP_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
         flutter build web --base-href "${{ inputs.base-href }}" \
-          --dart-define=KMA_SERVICE_KEY=${{ inputs.kma-service-key }} \
-          --dart-define=APP_VERSION="$APP_VERSION"
+          --dart-define=KMA_SERVICE_KEY=${{ inputs.kma-service-key }}

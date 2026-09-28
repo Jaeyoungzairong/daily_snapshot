@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../utils/web_url.dart';
 import '../widgets/loading_error_view.dart';
@@ -23,9 +25,50 @@ String describeAuthError(Object error) {
         return '로그인 링크가 만료되었습니다. 새 로그인 링크를 다시 요청해주세요.';
       case 'invalid-email':
         return '이메일 형식을 다시 확인해주세요.';
+      case 'credential-already-in-use':
+        return '이 Google 계정은 이미 다른 계정에 연동되어 있습니다.';
+      case 'provider-already-linked':
+        return '이미 이 계정에 Google 계정이 연동되어 있습니다.';
+      // 이 Google 계정의 이메일이 이미 다른 방식(대개 이메일 링크)으로 가입된 계정에
+      // 속해 있을 때 발생한다 — 흔히 회사 이메일이 곧 Google 계정인 경우(Google
+      // Workspace), 웹에서 연동을 먼저 하지 않고 안드로이드에서 바로 Google 로그인을
+      // 시도하면 이 에러가 난다. 연동 중(웹)에도 같은 코드가 날 수 있어(고른 Google
+      // 계정이 이미 다른 계정에 쓰이는 중) 두 상황을 모두 아우르는 안내를 준다.
+      case 'account-exists-with-different-credential':
+        return '이 이메일은 이미 다른 방식으로 가입되어 있습니다. 안드로이드라면 웹에서 먼저 '
+            '이 계정으로 로그인한 뒤 계정 다이얼로그에서 Google 계정을 연동해주세요. 연동 '
+            '중이었다면 다른 Google 계정을 선택해주세요.';
     }
   }
+  if (error is GoogleSignInException) {
+    return 'Google 로그인 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
+  }
   return '로그인 처리 중 문제가 발생했습니다: $error';
+}
+
+/// 이메일 링크 로그인 완료 실패가 "이 링크로는 더 시도해도 소용없는" 종료 오류인지 —
+/// 종료 오류면 링크 모드를 나가고 URL도 정리해 완전히 새 링크를 요청하게 한다. 그 외(특히
+/// 네트워크 등 일시적 오류, 그리고 아직 링크 자체는 소모되지 않은 [NotApprovedException])는
+/// 링크 모드와 URL을 그대로 유지해 "로그인 계속하기"를 다시 누를 수 있게 한다.
+///
+/// [hadStoredEmail]은 이 브라우저에 저장된 이메일로 시도했는지(true) 아니면 사용자가 직접
+/// 입력한 이메일로 시도했는지(false)를 나타낸다 — `invalid-action-code`는 수동 입력
+/// 경로에서는 오타일 가능성이 있어(이메일이 링크가 발급된 것과 다르면 이 코드가 난다)
+/// 재시도를 허용하고, 저장된 이메일(오타 가능성 없음)로도 이 에러가 나면 링크 자체가
+/// 문제라고 보고 종료 오류로 취급한다.
+bool isTerminalSignInLinkError(Object error, {required bool hadStoredEmail}) {
+  // 저장된 이메일도, 사용자가 입력한 이메일도 없어 애초에 시도할 방법이 없는 경우 —
+  // 이 브라우저에서는 더 재시도할 수단이 없으므로 새 링크가 필요하다.
+  if (error is PendingEmailNotFoundException) return true;
+  if (error is! FirebaseAuthException) return false;
+  switch (error.code) {
+    case 'expired-action-code':
+      return true;
+    case 'invalid-action-code':
+      return hadStoredEmail;
+    default:
+      return false;
+  }
 }
 
 class SignInPrompt extends ConsumerStatefulWidget {
@@ -42,20 +85,26 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
   bool _linkSent = false;
   String? _errorMessage;
 
-  // 이메일 링크로 돌아온 경우를 위한 상태. isSignInWithEmailLink()/저장된 이메일 조회는
-  // 로컬 확인일 뿐 Firebase 서버 호출이 아니므로 자동으로 미리 보여줘도 안전하다.
-  // 실제 로그인(signInWithEmailLink, 서버 호출)은 사용자가 "로그인 계속하기"를 직접
-  // 눌러야만 실행된다 — 그래야 메일 보안 스캐너가 링크를 미리 열어봐도 1회용 로그인
-  // 코드가 그 자리에서 소모되지 않는다.
-  bool _checkingLink = true;
+  // 이메일 링크로 돌아온 경우를 위한 상태(웹 전용 — 안드로이드는 Google 로그인만 쓰므로
+  // 이 상태들이 전혀 필요 없다). isSignInWithEmailLink()/저장된 이메일 조회는 로컬
+  // 확인일 뿐 Firebase 서버 호출이 아니므로 자동으로 미리 보여줘도 안전하다. 실제
+  // 로그인(signInWithEmailLink, 서버 호출)은 사용자가 "로그인 계속하기"를 직접 눌러야만
+  // 실행된다 — 그래야 메일 보안 스캐너가 링크를 미리 열어봐도 1회용 로그인 코드가 그
+  // 자리에서 소모되지 않는다.
+  bool _checkingLink = kIsWeb;
   bool _isLinkMode = false;
   bool _confirming = false;
   String? _pendingEmail;
+  // _checkForSignInLink()에서 감지한 링크를 그대로 저장해뒀다가 _confirmSignIn()에서
+  // 재사용한다 — 다시 조회하지 않고 최초에 확인한 값을 그대로 써야 안전하다.
+  String? _detectedLink;
+
+  bool _signingInWithGoogle = false;
 
   @override
   void initState() {
     super.initState();
-    _checkForSignInLink();
+    if (kIsWeb) _checkForSignInLink();
   }
 
   @override
@@ -68,10 +117,12 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
   Future<void> _checkForSignInLink() async {
     final authService = ref.read(authServiceProvider);
     final link = Uri.base.toString();
+    if (!mounted) return;
     if (!authService.isSignInLink(link)) {
       setState(() => _checkingLink = false);
       return;
     }
+    _detectedLink = link;
     final email = await authService.peekPendingEmail();
     if (!mounted) return;
     setState(() {
@@ -86,6 +137,7 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
   Future<void> _confirmSignIn() async {
     if (_confirming) return;
     String? manualEmail;
+    final hadStoredEmail = _pendingEmail != null;
     if (_pendingEmail == null) {
       manualEmail = _manualEmailController.text.trim();
       if (manualEmail.isEmpty) return;
@@ -97,15 +149,22 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
     try {
       await ref
           .read(authServiceProvider)
-          .completeSignInIfLink(Uri.base.toString(), emailOverride: manualEmail);
+          .completeSignInIfLink(_detectedLink!, emailOverride: manualEmail);
+      // 성공했을 때만 URL의 로그인 정보를 정리한다 — 여기 도달했다는 건 로그인이 끝났다는
+      // 뜻이라 더 이상 필요 없다.
+      clearSignInLinkFromUrl();
     } catch (error) {
       if (!mounted) return;
+      // 종료 오류(링크 자체가 못 쓰게 됨)만 링크 모드를 나가고 URL을 정리한다. 그 외(일시적
+      // 오류, 아직 승인 대기 중이라 링크가 소모되지 않은 경우)는 링크 모드를 유지해 사용자가
+      // "로그인 계속하기"를 다시 누를 수 있게 한다.
+      final terminal = isTerminalSignInLinkError(error, hadStoredEmail: hadStoredEmail);
       setState(() {
-        _isLinkMode = false;
+        if (terminal) _isLinkMode = false;
         _errorMessage = describeAuthError(error);
       });
+      if (terminal) clearSignInLinkFromUrl();
     } finally {
-      clearSignInLinkFromUrl();
       if (mounted) setState(() => _confirming = false);
     }
   }
@@ -129,6 +188,28 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
       setState(() => _errorMessage = '로그인 링크 발송에 실패했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_signingInWithGoogle) return;
+    setState(() {
+      _signingInWithGoogle = true;
+      _errorMessage = null;
+    });
+    try {
+      await ref.read(authServiceProvider).signInWithGoogle();
+    } on GoogleSignInException catch (error) {
+      // 계정 선택 화면에서 사용자가 직접 취소한 경우는 에러가 아니라 정상적인
+      // 흐름이라 메시지를 띄우지 않는다.
+      if (mounted && error.code != GoogleSignInExceptionCode.canceled) {
+        setState(() => _errorMessage = describeAuthError(error));
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _errorMessage = describeAuthError(error));
+    } finally {
+      if (mounted) setState(() => _signingInWithGoogle = false);
     }
   }
 
@@ -165,6 +246,48 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    // 안드로이드는 이메일 링크를 아예 받지 않고 Google 로그인만 쓴다 — 회사 메일 앱이
+    // 링크를 가로채 App Links가 못 열리는 문제를 원천적으로 피하기 위함. 이 계정으로
+    // 할일/메모 데이터를 이어서 보려면 웹에서 미리 계정 연동(AccountDialog의
+    // "Google 계정 연동하기")을 해둬야 한다.
+    if (!kIsWeb) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            '로그인하면 할 일·메모·파일함을 이용할 수 있어요.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium,
+          ),
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage!,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: _buttonShape(theme),
+              onPressed: _signingInWithGoogle ? null : _signInWithGoogle,
+              icon: _signingInWithGoogle
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.login),
+              label: const Text('Google로 로그인'),
+            ),
+          ),
+        ],
+      );
+    }
 
     if (_checkingLink) {
       return const SizedBox(height: 60, child: LoadingView());

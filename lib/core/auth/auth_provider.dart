@@ -33,6 +33,15 @@ final isAdminProvider = StreamProvider<bool>((ref) {
   return ref.watch(authServiceProvider).watchIsAdmin(email);
 });
 
+/// 관리자가 이 사용자에게 안드로이드 접근을 열어줬는지(admin_allowed_emails 문서의
+/// androidAccessEnabled 필드). AccountDialog가 "Google 계정 연동" 버튼을 보여줄지
+/// 판단하는 용도.
+final androidAccessEnabledProvider = StreamProvider<bool>((ref) {
+  final email = ref.watch(authEmailProvider).value;
+  if (email == null) return Stream.value(false);
+  return ref.watch(authServiceProvider).watchAndroidAccessEnabled(email);
+});
+
 final _forceLogoutAfterProvider = StreamProvider<DateTime?>((ref) {
   final email = ref.watch(authEmailProvider).value;
   if (email == null) return Stream.value(null);

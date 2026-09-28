@@ -9,8 +9,4 @@ class LocalConfig {
   LocalConfig._();
 
   static const String kmaServiceKey = String.fromEnvironment('KMA_SERVICE_KEY');
-
-  /// 배포 워크플로(deploy.yml)가 pubspec.yaml의 version을 읽어 빌드 시점에 주입한다.
-  /// 로컬 실행처럼 주입되지 않은 경우 기본값(0.0.0+1)으로 표시해 배포판과 구분한다.
-  static const String appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '0.0.0+1');
 }

@@ -21,10 +21,29 @@ class _InMemoryCloudListStore implements CloudListStore {
   }
 }
 
-ProviderContainer _makeContainer() {
+/// [failing]이 true인 동안 mutate가 항상 실패하는 저장소(오프라인/권한 거부 상황 재현용).
+class _FlakyCloudListStore extends _InMemoryCloudListStore {
+  bool failing = false;
+
+  @override
+  Future<void> mutate(
+    String docKey,
+    List<Map<String, dynamic>> Function(List<Map<String, dynamic>> current) transform,
+  ) async {
+    if (failing) {
+      await Future<void>.delayed(Duration.zero);
+      throw Exception('write failed');
+    }
+    await super.mutate(docKey, transform);
+  }
+}
+
+ProviderContainer _makeContainer([CloudListStore? store]) {
   final container = ProviderContainer(
     overrides: [
-      todoRepositoryProvider.overrideWithValue(TodoRepository(store: _InMemoryCloudListStore())),
+      todoRepositoryProvider.overrideWithValue(
+        TodoRepository(store: store ?? _InMemoryCloudListStore()),
+      ),
     ],
   );
   addTearDown(container.dispose);
@@ -107,6 +126,38 @@ void main() {
       final remaining = container.read(todoListProvider).value!;
       expect(remaining, hasLength(1));
       expect(remaining.first.text, '진행중인 일');
+    });
+
+    test('add() rolls back to the previous state and rethrows when the write fails', () async {
+      final store = _FlakyCloudListStore();
+      final container = _makeContainer(store);
+      await container.read(todoListProvider.future);
+      final notifier = container.read(todoListProvider.notifier);
+      await notifier.add('저장된 항목');
+
+      store.failing = true;
+      await expectLater(() => notifier.add('실패할 항목'), throwsException);
+
+      final items = container.read(todoListProvider).value!;
+      expect(items, hasLength(1));
+      expect(items.first.text, '저장된 항목');
+    });
+
+    test('toggle() rolls back only the failed change, keeping earlier successful ones', () async {
+      final store = _FlakyCloudListStore();
+      final container = _makeContainer(store);
+      await container.read(todoListProvider.future);
+      final notifier = container.read(todoListProvider.notifier);
+      await notifier.add('A');
+      await notifier.add('B');
+      final idA = container.read(todoListProvider).value!.first.id;
+
+      store.failing = true;
+      await expectLater(() => notifier.toggle(idA), throwsException);
+
+      final items = container.read(todoListProvider).value!;
+      expect(items, hasLength(2));
+      expect(items.first.done, isFalse);
     });
 
     test('changes persist across a fresh provider read via the same repository', () async {
@@ -227,5 +278,61 @@ void main() {
       final updated = container.read(todoMemoProvider).value!.first;
       expect(updated.content, '');
     });
+
+    test('addMemo() rolls back to the previous state and rethrows when the write fails', () async {
+      final store = _FlakyCloudListStore();
+      final container = _makeContainer(store);
+      await container.read(todoMemoProvider.future);
+      final notifier = container.read(todoMemoProvider.notifier);
+      await notifier.addMemo();
+
+      store.failing = true;
+      await expectLater(() => notifier.addMemo(), throwsException);
+
+      final memos = container.read(todoMemoProvider).value!;
+      expect(memos, hasLength(1));
+    });
+
+    test(
+      'a failed debounced save reports memoSaveFailureProvider once, and flushPending retries it',
+      () async {
+        final store = _FlakyCloudListStore();
+        final container = _makeContainer(store);
+        await container.read(todoMemoProvider.future);
+        final notifier = container.read(todoMemoProvider.notifier);
+        final memo = (await notifier.addMemo())!;
+
+        expect(container.read(memoSaveFailureProvider), 0);
+
+        store.failing = true;
+        notifier.scheduleRename(memo.id, '실패할 제목');
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+
+        // renameMemo는 debounce 경로에서 직접 상태를 바꾸므로(입력 중인 텍스트필드 값이
+        // 그대로 남아야 함), 저장 실패해도 화면 값은 되돌리지 않는다 — 대신 대기 값
+        // (_pendingTitleId/_pendingTitleValue)이 지워지지 않아 flushPending이 재시도할 수
+        // 있고, 실패 알림은 한 번만 센다.
+        expect(container.read(memoSaveFailureProvider), 1);
+        expect(container.read(todoMemoProvider).value!.first.title, '실패할 제목');
+
+        store.failing = false;
+        await notifier.flushPending();
+        // 저장이 다시 성공했으니 실패 카운트는 더 늘지 않는다.
+        final failureCountAfterRetry = container.read(memoSaveFailureProvider);
+        container.dispose();
+        expect(failureCountAfterRetry, 1);
+
+        // 화면 상태만으로는 실제로 서버에 쓰였는지 알 수 없으니(디바운스 경로는 실패해도
+        // 낙관적 표시를 유지하므로), 같은 저장소를 새 컨테이너로 다시 읽어 flushPending이
+        // 실제로 저장을 재시도했는지 확인한다.
+        final freshContainer = ProviderContainer(
+          overrides: [todoRepositoryProvider.overrideWithValue(TodoRepository(store: store))],
+        );
+        addTearDown(freshContainer.dispose);
+        freshContainer.listen(todoMemoProvider, (_, _) {});
+        final reloaded = await freshContainer.read(todoMemoProvider.future);
+        expect(reloaded.first.title, '실패할 제목');
+      },
+    );
   });
 }

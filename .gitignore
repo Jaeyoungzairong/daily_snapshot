@@ -44,6 +44,15 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Android 로컬/기기별 설정 및 비밀 값 — 기기마다 다르거나(local.properties의 SDK 경로)
+# 저장소에 커밋하지 않는 게 안전한 값들(secrets.json/serviceAccountKey.json과 같은 정책)
+/android/local.properties
+/android/.gradle/
+/android/app/google-services.json
+*.jks
+*.keystore
+key.properties
+
 # Widget Preview related
 .widget_preview/
 

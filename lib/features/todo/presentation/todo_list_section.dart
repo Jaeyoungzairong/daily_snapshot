@@ -5,6 +5,7 @@ import '../../../core/widgets/confirm_dialog.dart';
 import '../../../core/widgets/pagination_controls.dart';
 import '../application/todo_provider.dart';
 import '../data/todo_item.dart';
+import 'todo_error.dart';
 
 class TodoListSection extends ConsumerStatefulWidget {
   const TodoListSection({super.key, required this.items});
@@ -58,8 +59,14 @@ class _TodoListSectionState extends ConsumerState<TodoListSection> {
                   _TodoRow(
                     key: ValueKey(item.id),
                     item: item,
-                    onToggle: () => ref.read(todoListProvider.notifier).toggle(item.id),
-                    onDelete: () => ref.read(todoListProvider.notifier).remove(item.id),
+                    onToggle: () => runTodoWrite(
+                      context,
+                      () => ref.read(todoListProvider.notifier).toggle(item.id),
+                    ),
+                    onDelete: () => runTodoWrite(
+                      context,
+                      () => ref.read(todoListProvider.notifier).remove(item.id),
+                    ),
                   ),
               ],
             ),
@@ -89,7 +96,9 @@ class _TodoListSectionState extends ConsumerState<TodoListSection> {
                     title: '완료 항목 지우기',
                     message: '완료된 항목을 모두 지울까요?',
                   );
-                  if (confirmed) ref.read(todoListProvider.notifier).clearCompleted();
+                  if (confirmed && context.mounted) {
+                    runTodoWrite(context, () => ref.read(todoListProvider.notifier).clearCompleted());
+                  }
                 },
                 style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
                 child: const Text('완료 항목 지우기'),

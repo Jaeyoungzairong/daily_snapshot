@@ -3,11 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/page_reload.dart';
 import '../../../core/widgets/dashboard_card.dart';
 import '../../../core/widgets/loading_error_view.dart';
 import '../../../core/widgets/signed_out_placeholder.dart';
 import '../application/todo_provider.dart';
+import '../data/memo_item.dart';
 import 'memo_section.dart';
 import 'todo_error.dart';
 
@@ -49,10 +49,13 @@ class _MemoCardState extends ConsumerState<MemoCard> {
   }
 
   Future<void> _addMemo() async {
-    final memo = await ref.read(todoMemoProvider.notifier).addMemo();
-    if (!mounted) return;
+    MemoItem? memo;
+    final saved = await runTodoWrite(context, () async {
+      memo = await ref.read(todoMemoProvider.notifier).addMemo();
+    });
+    if (!saved || !mounted) return;
     if (memo != null) {
-      _selectMemo(memo.id);
+      _selectMemo(memo!.id);
     } else {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('메모는 최대 $maxMemoCount개까지 만들 수 있습니다.')));
@@ -62,13 +65,19 @@ class _MemoCardState extends ConsumerState<MemoCard> {
   Future<void> _moveSelectedMemo(int delta) async {
     final id = _selectedMemoId;
     if (id == null) return;
-    await ref.read(todoMemoProvider.notifier).moveMemo(id, delta);
+    await runTodoWrite(context, () => ref.read(todoMemoProvider.notifier).moveMemo(id, delta));
   }
 
   Future<void> _deleteSelectedMemo() async {
     final id = _selectedMemoId;
     if (id == null) return;
-    await ref.read(todoMemoProvider.notifier).removeMemo(id);
+    final saved = await runTodoWrite(
+      context,
+      () => ref.read(todoMemoProvider.notifier).removeMemo(id),
+    );
+    // 삭제 저장에 실패하면 이미 안내했고 메모도 그대로 남아 있으므로 선택 상태를 건드리지
+    // 않는다. 삭제 확인 다이얼로그·네트워크 왕복 중 카드가 사라졌을 수도 있어 mounted도 확인한다.
+    if (!saved || !mounted) return;
     final remaining = ref.read(todoMemoProvider).value ?? [];
     if (remaining.isEmpty) {
       setState(() {
@@ -98,6 +107,19 @@ class _MemoCardState extends ConsumerState<MemoCard> {
     final theme = Theme.of(context);
     final authState = ref.watch(authUidProvider);
 
+    // 디바운스 자동저장은 타이머 콜백에서 실행돼 예외를 화면까지 전달할 수 없어, 실패하면
+    // 이 카운터가 올라간다 — 입력한 내용은 화면에 그대로 남아 있고, 이후 메모 전환/로그아웃
+    // 때 한 번 더 저장을 시도한다.
+    ref.listen(memoSaveFailureProvider, (previous, next) {
+      if (next > (previous ?? 0)) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(content: Text('메모를 저장하지 못했습니다. 네트워크 연결을 확인해주세요.')),
+          );
+      }
+    });
+
     // 로그아웃(uid가 null이 됨)하면 이전 세션의 메모 선택 상태가 다음 로그인 때
     // 잘못 남아있지 않도록 초기화한다.
     ref.listen(authUidProvider, (previous, next) {
@@ -115,7 +137,13 @@ class _MemoCardState extends ConsumerState<MemoCard> {
       accentColor: theme.extension<AppAccentColors>()?.memo,
       child: authState.when(
         loading: () => const LoadingView(),
-        error: (error, _) => ErrorView(message: error.toString(), onRetry: reloadPage),
+        // 예전엔 웹의 페이지 새로고침(reloadPage)에 기댔는데, 안드로이드는 이 함수가
+        // 빈 구현이라 버튼을 눌러도 아무 반응이 없었다 — authServiceProvider를
+        // invalidate하면 인증 스트림 구독 자체를 다시 만들어서 두 플랫폼 모두에서 동작한다.
+        error: (error, _) => ErrorView(
+          message: error.toString(),
+          onRetry: () => ref.invalidate(authServiceProvider),
+        ),
         data: (uid) => uid == null ? const SignedOutPlaceholder() : _buildSignedInContent(),
       ),
     );
@@ -126,7 +154,12 @@ class _MemoCardState extends ConsumerState<MemoCard> {
 
     return memosAsync.when(
       loading: () => const LoadingView(),
-      error: (error, _) => ErrorView(message: describeTodoDataError(error), onRetry: reloadPage),
+      // 같은 이유로 todoMemoProvider만 다시 구독하도록 invalidate한다 — 전체 페이지를
+      // 새로고침하지 않아도 되고 안드로이드에서도 동일하게 동작한다.
+      error: (error, _) => ErrorView(
+        message: describeTodoDataError(error),
+        onRetry: () => ref.invalidate(todoMemoProvider),
+      ),
       data: (memos) {
         // 메모 목록이 처음 도착했을 때 한 번만 첫 메모를 선택해 채운다(그 이후엔 사용자가
         // 선택/입력 중인 내용을 덮어쓰면 안 되므로). build() 안에서 직접 확인해야

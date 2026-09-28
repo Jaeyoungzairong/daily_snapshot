@@ -1,4 +1,5 @@
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -226,6 +227,14 @@ class _FileRow extends ConsumerWidget {
   Future<void> _download(BuildContext context, WidgetRef ref) async {
     try {
       await ref.read(fileDownloadProvider.notifier).download(entry);
+      if (!context.mounted) return;
+      // 웹은 브라우저가 자체적으로 다운로드 완료를 보여주므로(다운로드 바, 알림 등)
+      // 별도 안내가 필요 없다 — 안드로이드만 저장 성공을 알 수 있는 유일한 신호라 알려준다.
+      if (!kIsWeb) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('"${entry.name}" 파일을 저장했습니다.')));
+      }
     } catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context)
@@ -282,7 +291,9 @@ class _FileRow extends ConsumerWidget {
               ],
             ),
           ),
-          if (isPreviewableExtension(extension))
+          // 미리보기는 "새 탭에서 열기"(openUrl)에 기대는 기능이라 웹 전용이다 — 안드로이드는
+          // 다운로드만 지원한다.
+          if (kIsWeb && isPreviewableExtension(extension))
             IconButton(
               onPressed: () => _preview(context, ref),
               icon: const Icon(Icons.visibility_outlined, size: 20),
