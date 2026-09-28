@@ -6,6 +6,12 @@ import '../../../core/widgets/confirm_dialog.dart';
 import '../application/todo_provider.dart';
 import '../data/memo_item.dart';
 
+// Flutter는 모바일 앱에서 입력창 바깥을 터치해도 포커스를 풀지 않아(웹·마우스만 해제) 키보드가
+// 계속 떠 있었다. 특히 메모 내용은 여러 줄이라 Enter가 줄바꿈이어서 닫을 방법이 뒤로가기뿐이었다.
+// 제목↔내용처럼 다른 입력창을 누르는 건 "바깥"으로 치지 않아(같은 TextFieldTapRegion 그룹)
+// 포커스가 그대로 옮겨간다.
+void _unfocus(PointerDownEvent _) => FocusManager.instance.primaryFocus?.unfocus();
+
 class MemoSection extends StatelessWidget {
   const MemoSection({
     super.key,
@@ -74,6 +80,7 @@ class MemoSection extends StatelessWidget {
                     counterText: '',
                   ),
                   onChanged: onTitleChanged,
+                  onTapOutside: _unfocus,
                 ),
               ),
               IconButton(
@@ -114,6 +121,7 @@ class MemoSection extends StatelessWidget {
             maxLines: 20,
             maxLength: maxMemoContentLength,
             onChanged: onContentChanged,
+            onTapOutside: _unfocus,
           ),
         ] else
           Text(

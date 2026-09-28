@@ -185,7 +185,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= _wideBreakpoint;
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(_pagePadding),
+            // 입력 중 화면을 스크롤하면 키보드를 내린다(모바일 앱은 기본으로 안 내림).
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            // 안드로이드는 targetSdk 35+부터 edge-to-edge가 강제돼 화면이 하단 네비게이션 바
+            // 뒤까지 그려진다 — 아래쪽에 바 높이만큼 여백을 더해, 맨 아래까지 스크롤했을 때
+            // 마지막 카드와 버전 표시가 바에 가리지 않게 한다(스크롤 중에는 콘텐츠가 바 뒤로
+            // 지나가 edge-to-edge 모양은 유지). 웹/바 없는 기기에서는 0이라 영향 없음.
+            padding: EdgeInsets.fromLTRB(
+              _pagePadding,
+              _pagePadding,
+              _pagePadding,
+              _pagePadding + MediaQuery.paddingOf(context).bottom,
+            ),
             child: Column(
               children: [
                 Center(

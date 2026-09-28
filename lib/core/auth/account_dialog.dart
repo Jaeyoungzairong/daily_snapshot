@@ -45,7 +45,8 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
     final proceed = await confirmAction(
       context,
       title: '저장되지 않은 메모',
-      message: '메모 일부를 저장하지 못했습니다. 네트워크 연결을 확인해주세요.\n'
+      message:
+          '메모 일부를 저장하지 못했습니다. 네트워크 연결을 확인해주세요.\n'
           '지금 로그아웃하면 저장되지 않은 내용은 사라집니다.',
       confirmLabel: '그래도 로그아웃',
     );
@@ -129,15 +130,13 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
         return;
       }
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(describeAuthError(error))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(describeAuthError(error))));
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(describeAuthError(error))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(describeAuthError(error))));
       }
     } finally {
       if (mounted) setState(() => _linkingGoogle = false);
@@ -171,9 +170,8 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
     } catch (error) {
       ref.read(sessionInvalidationHandledProvider.notifier).set(false);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(describeAuthError(error))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(describeAuthError(error))));
       }
     } finally {
       if (mounted) setState(() => _signingOut = false);
@@ -208,7 +206,7 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
               backgroundColor: colorScheme.primaryContainer,
               foregroundColor: colorScheme.onPrimaryContainer,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 8),
             authState.when(
               loading: () =>
                   const SizedBox(height: 80, child: Center(child: CircularProgressIndicator())),
@@ -300,7 +298,7 @@ class _SignedInContent extends StatelessWidget {
               label: Text(isGoogleLinked ? 'Google 계정 연동 해제하기' : 'Google 계정 연동하기'),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
         ],
         SizedBox(
           width: double.infinity,

@@ -225,6 +225,16 @@ class _FileRow extends ConsumerWidget {
   }
 
   Future<void> _download(BuildContext context, WidgetRef ref) async {
+    // 목록의 아이콘을 잘못 눌러 큰 파일(최대 150MB)을 받기 시작하는 일이 없도록 한 번 확인한다
+    // — 특히 안드로이드는 모바일 데이터로 받을 수 있어 크기를 함께 보여준다.
+    final confirmed = await confirmAction(
+      context,
+      title: '파일 다운로드',
+      message: '"${entry.name}" (${Formatters.fileSize(entry.sizeBytes)})\n파일을 다운로드할까요?',
+      confirmLabel: '다운로드',
+      destructive: false,
+    );
+    if (!confirmed || !context.mounted) return;
     try {
       await ref.read(fileDownloadProvider.notifier).download(entry);
       if (!context.mounted) return;

@@ -18,7 +18,7 @@ Flutter Web + 안드로이드 대시보드(웹은 날씨·환율·할일·메모
 ```
 lib/
   core/       테마, 공용 위젯, 인증(AuthService/AuthProvider, 이메일 링크+Google Sign-In), 로컬
-              저장소, HTTP 클라이언트
+              저장소, HTTP 클라이언트(network/: ApiClient·parseApiResponse·api_retry)
   features/
     weather/       날씨 (기상청 API, 지역 검색, 위치로 찾기) — 웹 전용
     exchange_rate/ 환율 (실시간 시세 + 히스토리 차트) — 웹 전용
@@ -87,8 +87,52 @@ android/    안드로이드 네이티브 프로젝트(Gradle). google-services.j
   막는 실제 버그가 있었음 — 그래서 미승인이면 즉시 삭제한다.
 - **앱 버전 표시는 dart-define 대신 `package_info_plus`로 통일.** 웹은 `flutter build web`이
   자동 생성하는 `build/web/version.json`을, 안드로이드는 설치된 APK의 네이티브 버전 정보를
-  읽어와 `pubspec.yaml`의 `version`을 그대로 보여준다 — 플랫폼별로 값을 따로 주입할 필요가
-  없어져 CI 빌드 스크립트도 단순해짐.
+  읽어와 `pubspec.yaml`의 `version`을 보여준다(빌드번호 `+N`은 사용자 화면에서 제외 — 같은 날
+  재배포 구분용 내부 값이라, 2026-09-28 결정) — 플랫폼별로 값을 따로 주입할 필요가
+  없어져 CI 빌드 스크립트도 단순해짐. 대시보드 하단에만 표시(계정 다이얼로그에 넣었다가 사용자 결정으로 다시 뺌, 2026-09-28).
+- **할일/메모 낙관적 쓰기가 실패하면 "직전 화면 상태"가 아니라 스트림으로 마지막에 받은 서버
+  값으로 롤백한다(`_OptimisticList._commit`).** 직전 화면 상태에는 아직 진행 중인 다른 쓰기의
+  낙관적 반영분이 섞여 있어, 오프라인에서 두 변경이 겹쳐 둘 다 실패하면 저장 안 된 변경이 화면에
+  남았다(서버는 그대로라 바로잡을 스냅샷도 안 옴). 서버 값 기준은 "다른 쓰기가 막 성공했는데 그
+  스냅샷이 아직 안 온" 순간 잠깐 빠져 보이지만, 성공한 쓰기의 스냅샷이 곧 와서 항상 서버 상태로
+  수렴한다. 한때 직전 상태 기준으로 바꿨다가 되돌린 이력이 있음 — 원인은 아래 테스트 가짜 저장소 항목.
+- **메모 디바운스 자동저장이 실패해도 화면 값은 되돌리지 않는다.** 입력창에 사용자가 친 글이 남아
+  있는데 상태만 옛 값이 되면 더 혼란스럽기 때문. 대신 대기 값(`_pendingTitle*`/`_pendingContent*`)을
+  지우지 않고 남겨 `flushPending`(메모 전환·로그아웃·"다시 저장" 버튼)이 재시도하게 하고, 실패
+  상태를 `memoUnsavedEditsProvider`(배너, 계정 바뀌면 자동 초기화)와 `memoSaveFailureProvider`
+  (스낵바, 실패 상태로 바뀔 때 한 번만)로 알린다. `AccountDialog.onBeforeSignOut`은 모두 저장됐는지
+  `bool`을 돌려주고, false면 "그래도 로그아웃" 확인을 받는다(core가 todo provider를 직접 모르게 콜백 유지).
+- **이메일 링크 로그인 완료(`completeSignInIfLink`)는 승인 여부를 `signInWithEmailLink`보다 먼저
+  확인하고, 저장된 요청 이메일은 로그인 성공 후에만 지운다.** 예전엔 먼저 지워서 일시적 오류 한 번에
+  같은 링크로 재시도할 방법이 사라졌다. 실패는 `isTerminalSignInLinkError`로 분류해, 만료·저장된
+  이메일로도 `invalid-action-code`·요청 이메일 없음만 "새 링크 필요"(URL 정리)로 보고 나머지(네트워크,
+  미승인 — 아직 링크 미소모, 수동 입력 이메일의 `invalid-action-code` — 오타 가능성)는 링크 모드를 유지.
+- **외부 API(날씨/환율)는 `ApiClient`에서 오류를 `ApiException`으로 통일하고, 그 provider들은
+  `ApiException`을 자동 재시도하지 않는다(`retryUnlessApiException`).** Riverpod 3 기본 자동 재시도
+  때문에 실패 시 로딩 스피너만 수십 초~수 분 보였다(아래 제약사항 참고). 타임아웃(15초)은
+  `Future.timeout`이 아니라 `AbortableRequest`로 실제 요청을 취소하고, 응답 파싱 중 `TypeError`/
+  `FormatException`은 `parseApiResponse`로 한국어 `ApiException`이 된다. 공유 파일함 다운로드는
+  전체 시간 제한 대신 "30초간 청크가 안 오면" 끊는 정체 타임아웃(대용량 전송이 정상적으로 길 수 있음).
+- **손상된 할일/메모 항목(필드 누락·타입 오류)은 읽을 때 건너뛰고, 쓸 때는 지우지 않고 문서 뒤에
+  보존한다(`TodoRepository._watch`/`_mutate`).** 예전엔 한 항목만 깨져도 스트림 전체가 에러가 돼
+  카드가 마비되고 "다시 시도"로도 복구가 안 됐다. 단 `items`가 배열이 아니거나 배열 안의 맵이 아닌
+  값은 `CloudListStore._itemsOf`에서 걸러져 다음 쓰기 때 사라진다(수동 편집에서만 생기는 경우라 수용).
+- **배포는 전부 Firebase 콘솔에서 수동(2026-09-28 결정).** 웹 Hosting만 `main` push 시 GitHub
+  Actions로 자동 배포. 안드로이드 APK는 로컬 `flutter build apk` 후 App Distribution 콘솔에 업로드 —
+  서명 키·`google-services.json`을 GitHub Secrets에 올리지 않기로 사용자가 명시적으로 결정했고,
+  셀프 호스티드 러너도 채택하지 않음(자동 배포를 다시 제안하지 말 것). Firestore/Storage 규칙은 콘솔
+  규칙 편집기에 파일 전체를 붙여넣어 게시 — 그래서 `firebase.json`에 `firestore` 키가 없는 게
+  정상이다(추가했다가 사용자 결정으로 다시 지움, 다시 제안하지 말 것).
+- **안드로이드 런처 아이콘은 `flutter_launcher_icons`로 웹 아이콘(`web/icons/Icon-512.png`,
+  `Icon-maskable-512.png`)에서 생성한다.** 원본을 한 벌만 두려고 별도 이미지를 만들지 않았다.
+  적응형 전경은 maskable 버전(글자 주변 여백 있음)을 쓰고 `adaptive_icon_foreground_inset: 0` —
+  기본값 16%를 두면 여백이 이중으로 들어가 글자가 너무 작아진다. inset 0에서도 글자의 가장 먼
+  픽셀이 중심에서 145px/512로 안전 영역(156px) 안이라 잘리지 않음(측정 확인). 배경색 `#0B5FA5`는
+  아이콘 픽셀을 측정한 값. 생성물(`mipmap-*`, `drawable-*/ic_launcher_foreground.png`,
+  `mipmap-anydpi-v26`, `values/colors.xml`)은 손으로 고치지 말고 다시 생성할 것.
+- **`storage.rules`/`firestore.rules`의 `isAdmin` 접근은 `.get('isAdmin', false)`로 한다.** 같은
+  파일의 `forceLogoutAfter`처럼, 관리자가 아닌 사용자 문서엔 필드 자체가 없을 수 있어 점(.) 표기로
+  읽으면 규칙 평가 오류가 날 수 있기 때문(에뮬레이터 검증은 못 함 — Java 미설치).
 
 ## 알아낸 제약사항 / 주의할 점
 - **`localhost:8766`은 `flutter run` 개발 서버가 아니라 `serve_static.bat`로 띄운 `build/web`
@@ -130,3 +174,26 @@ android/    안드로이드 네이티브 프로젝트(Gradle). google-services.j
   import하지 않은 이유는 Dart의 `_` 프리픽스(프라이빗)가 클래스 단위가 아니라 **파일 단위**라,
   다른 파일에서 그대로 재사용할 수 없기 때문. 의도적인 중복이니 "왜 안 합쳤지" 하고 억지로
   공유 헬퍼 파일로 리팩터링하지 말 것(원하면 `_` 없이 공개 헬퍼로 승격하는 방법은 있음).
+- **테스트의 `_InMemoryCloudListStore`는 파일마다 동작이 다르다.** `todo_provider_test.dart`의 것은
+  실제 Firestore `snapshots()`처럼 구독 시 한 번 + 쓰기 성공마다 새 값을 다시 내보내고, 카드/저장소
+  테스트의 것은 한 번만 내보낸다. 롤백·동기화처럼 "성공한 쓰기의 스냅샷이 나중에 도착하는" 동작을
+  검증할 땐 반드시 다시 내보내는 쪽을 써야 한다 — 한 번만 내보내는 가짜로 검증했다가 잘못된 롤백
+  설계(직전 상태 기준)를 맞다고 판단한 적이 있음.
+- **Riverpod 3(3.4.x)은 provider가 `Exception`으로 실패하면 기본으로 최대 10번 자동 재시도하고
+  (대기 200ms→6.4s, 합계 약 38초), 그동안 상태가 `AsyncLoading`이라 기본 `when`은 로딩 분기를
+  탄다.** 즉 에러 화면/"다시 시도" 버튼이 한참 늦게 뜬다. `Error`(TypeError 등)는 재시도 안 함.
+  새 외부 API provider를 만들면 `retry: retryUnlessApiException`을 지정할 것. 할일/메모/파일함
+  Firestore 스트림 provider도 같은 재시도를 타는지는 확인 안 함(세션 무효화 감지 지연과 관련 가능).
+- **Flutter 모바일 앱(안드로이드/iOS)은 입력창 바깥을 터치해도 포커스를 풀지 않는다**(웹과 마우스만
+  해제 — SDK `_EditableTextTapOutsideAction`). 그래서 키보드가 계속 떠 있었다 — 안드로이드에 나오는
+  입력창에는 `onTapOutside`로 포커스를 풀고, 대시보드 스크롤뷰는 `keyboardDismissBehavior: onDrag`.
+  새 입력창을 추가하면 같은 처리를 할 것. 다른 입력창을 누르는 건 "바깥"이 아님(같은 TapRegion 그룹).
+- **안드로이드는 targetSdk 36(Flutter 기본)이라 edge-to-edge가 강제돼 화면이 하단 네비게이션 바
+  뒤까지 그려진다.** 대시보드는 스크롤 하단 패딩에 `MediaQuery.paddingOf(context).bottom`을 더해
+  처리함. 화면 아래쪽에 붙는 UI를 새로 만들면 이 inset을 고려할 것.
+- **`saveBytes`(file_saver.dart)는 웹/안드로이드 모두 `Future<void>`이고 반드시 await할 것.** 안드로이드
+  구현은 실제 파일 I/O라, await 없이 호출했을 때 저장 실패가 아무 데도 전달되지 않았다.
+- **`file_saver`가 끌어오는 `jni`/`jni_flutter`가 CMake와 Android SDK Platform 35를 요구한다.** 없는
+  PC에서는 첫 release 빌드 때 Gradle이 자동 설치(오류 아님). Kotlin Gradle Plugin 경고
+  (`file_saver`, `firebase_auth/core/storage`)는 지금은 빌드되지만 이후 Flutter에서 실패할 수 있음 —
+  대응하려면 패키지 업그레이드(사전 승인 필요).
