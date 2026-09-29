@@ -61,6 +61,17 @@ class FileRepository {
 
   Future<void> registerFile(FileEntry entry) => _collection.doc(entry.id).set(entry.toJson());
 
+  /// 업로드는 성공했지만 [registerFile]이 실패해 Firestore 문서가 없는 Storage 파일을 지운다.
+  /// 문서가 없으면 목록(watchFiles)에 절대 나타나지 않아 앱에서 발견·삭제할 방법이 없는데도
+  /// 용량은 차지하기 때문이다. 어디까지나 최선을 다한 정리라 실패해도 예외를 던지지 않는다 —
+  /// 특히 storage.rules의 삭제 규칙은 (관리자가 아니면) Firestore 문서의 uploadedByEmail을
+  /// 교차 조회하는데 이 경우엔 문서가 없어, 일반 사용자의 정리 시도는 규칙에 거부될 수 있다.
+  Future<void> discardUnregisteredUpload(String storagePath) async {
+    try {
+      await _storage.ref(storagePath).delete();
+    } catch (_) {}
+  }
+
   Future<String> getDownloadUrl(String storagePath) => _storage.ref(storagePath).getDownloadURL();
 
   /// 다운로드 URL을 직접 스트리밍으로 받아온다. firebase_storage의 getData()는 진행률

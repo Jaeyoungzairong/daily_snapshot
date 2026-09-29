@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  _parseApiResponseTests();
+
   group('ApiClient.getJson', () {
     test('returns the decoded JSON body on a 200 response', () async {
       final client = MockClient(
@@ -64,6 +66,48 @@ void main() {
       await expectLater(
         () => apiClient.getJson(Uri.parse('https://example.com/data')),
         throwsA(isA<ApiException>().having((e) => e.message, 'message', contains('응답이 없습니다'))),
+      );
+    });
+  });
+}
+
+void _parseApiResponseTests() {
+  group('parseApiResponse', () {
+    test('returns the parsed value when the shape is as expected', () {
+      final json = <String, dynamic>{'value': 3};
+
+      expect(parseApiResponse(() => json['value'] as int), 3);
+    });
+
+    test('converts a missing/mistyped field (TypeError) into ApiException', () {
+      final json = <String, dynamic>{};
+
+      expect(
+        () => parseApiResponse(() => json['value'] as int, message: '형식 오류'),
+        throwsA(isA<ApiException>().having((e) => e.message, 'message', '형식 오류')),
+      );
+    });
+
+    test('converts a null-check failure on a missing key into ApiException', () {
+      final rates = <String, double>{'USD': 1.0};
+
+      expect(
+        () => parseApiResponse(() => rates['KRW']! * 2),
+        throwsA(isA<ApiException>()),
+      );
+    });
+
+    test('converts a FormatException (e.g. bad date) into ApiException', () {
+      expect(
+        () => parseApiResponse(() => DateTime.parse('not-a-date')),
+        throwsA(isA<ApiException>()),
+      );
+    });
+
+    test('lets an ApiException thrown inside the parser pass through unchanged', () {
+      expect(
+        () => parseApiResponse<void>(() => throw ApiException('기상청 API 오류: 서비스 키 오류')),
+        throwsA(isA<ApiException>().having((e) => e.message, 'message', contains('서비스 키'))),
       );
     });
   });

@@ -25,9 +25,16 @@ class FirestoreListStore implements CloudListStore {
   DocumentReference<Map<String, dynamic>> _doc(String docKey) =>
       _firestore.collection('users').doc(uid).collection('data').doc(docKey);
 
+  // items가 배열이 아니거나 배열 안에 맵이 아닌 값이 섞여 있어도(수동 편집 등) 예외 없이 읽을 수
+  // 있는 것만 돌려준다 — 예전엔 lazy cast라 스트림을 소비하는 시점에 TypeError가 나 카드
+  // 전체가 마비됐다. 항목 내부 필드가 손상된 경우는 TodoRepository가 항목 단위로 걸러낸다.
   List<Map<String, dynamic>> _itemsOf(Map<String, dynamic>? data) {
-    final items = data?['items'] as List?;
-    return items?.cast<Map<String, dynamic>>() ?? [];
+    final items = data?['items'];
+    if (items is! List) return [];
+    return [
+      for (final entry in items)
+        if (entry is Map) Map<String, dynamic>.from(entry),
+    ];
   }
 
   @override

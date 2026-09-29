@@ -31,7 +31,54 @@ class _InMemoryCloudListStore implements CloudListStore {
   }
 }
 
+/// [failing]이 true인 동안 저장이 항상 실패하는 저장소(오프라인 상황 재현용).
+class _FlakyCloudListStore extends _InMemoryCloudListStore {
+  bool failing = false;
+
+  @override
+  Future<void> mutate(
+    String docKey,
+    List<Map<String, dynamic>> Function(List<Map<String, dynamic>> current) transform,
+  ) async {
+    if (failing) throw Exception('write failed');
+    await super.mutate(docKey, transform);
+  }
+}
+
 void main() {
+  testWidgets('MemoCard keeps an unsaved-changes banner until a retry succeeds', (tester) async {
+    final store = _FlakyCloudListStore();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authUidProvider.overrideWith((ref) => const AsyncData('test-uid')),
+          todoRepositoryProvider.overrideWithValue(TodoRepository(store: store)),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: SingleChildScrollView(child: MemoCard())),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('새 메모 추가'));
+    await tester.pumpAndSettle();
+
+    store.failing = true;
+    await tester.enterText(find.widgetWithText(TextField, '제목'), '오프라인 제목');
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+
+    expect(find.text('저장되지 않은 메모 변경 사항이 있습니다.'), findsOneWidget);
+
+    store.failing = false;
+    await tester.tap(find.text('다시 저장'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('저장되지 않은 메모 변경 사항이 있습니다.'), findsNothing);
+    expect(find.text('메모를 저장했습니다.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('MemoCard adds a memo, renames it, edits content, and deletes it without overflow', (
     tester,
   ) async {

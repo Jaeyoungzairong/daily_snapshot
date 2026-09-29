@@ -130,17 +130,24 @@ class FileUploadNotifier extends Notifier<UploadProgress?> {
             await subscription.cancel();
           }
 
-          await repository.registerFile(
-            FileEntry(
-              id: upload.docId,
-              name: file.name,
-              sizeBytes: bytes.length,
-              contentType: mimeTypeForExtension(file.extension),
-              storagePath: upload.storagePath,
-              uploadedByEmail: email,
-              uploadedAt: DateTime.now(),
-            ),
-          );
+          try {
+            await repository.registerFile(
+              FileEntry(
+                id: upload.docId,
+                name: file.name,
+                sizeBytes: bytes.length,
+                contentType: mimeTypeForExtension(file.extension),
+                storagePath: upload.storagePath,
+                uploadedByEmail: email,
+                uploadedAt: DateTime.now(),
+              ),
+            );
+          } catch (_) {
+            // Storage에는 올라갔는데 목록에 등록되지 못한 파일이 앱에서 보이지 않는 채로 용량만
+            // 차지하지 않도록, 방금 올린 파일을 최선을 다해 지운 뒤 실패를 그대로 전달한다.
+            await repository.discardUnregisteredUpload(upload.storagePath);
+            rethrow;
+          }
           count++;
           succeeded++;
         } catch (error) {

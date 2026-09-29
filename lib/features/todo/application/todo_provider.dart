@@ -38,19 +38,32 @@ final todoRepositoryProvider = Provider<TodoRepository>((ref) {
 
 /// 낙관적으로 화면 상태를 먼저 바꾼 뒤 Firestore에 쓰는 Notifier들의 공통 동작.
 ///
-/// 쓰기가 실패하면 이 커밋 직전의 state.value(previous)로 되돌린다. previous는 그 이전
-/// 커밋들의 결과(성공한 낙관적 반영이든, 실패 후 롤백이든, 그사이 도착한 실제 서버 값이든)를
-/// 이미 반영한 값이라, 매 커밋이 각자 이렇게만 되돌려도 연쇄 실패에서 상태가 계속 정확하게
-/// 유지된다. 스트림이 나중에 보내는 확정 값이 도착하면 그걸로 자연히 덮어써진다. 예외는
-/// 그대로 다시 던져서 호출한 쪽(UI)이 사용자에게 알릴 수 있게 한다.
+/// 쓰기가 실패하면 "이 커밋 직전의 화면 상태"가 아니라 스트림으로 마지막에 받은 서버 값으로
+/// 되돌린다. 직전 화면 상태에는 아직 진행 중인 다른 쓰기의 낙관적 반영분이 섞여 있을 수 있어서,
+/// 오프라인에서 체크박스 두 개를 연달아 눌러 둘 다 실패하면 먼저 실패한 쪽의 변경이 되살아나
+/// 저장 안 된 상태가 화면에 남았다(서버는 그대로라 이를 바로잡을 스트림 이벤트도 오지 않음).
+///
+/// 서버 값 기준이면 다른 쓰기가 막 성공했지만 그 스냅샷이 아직 도착하지 않은 순간엔 그 변경이
+/// 잠깐 빠져 보일 수 있다 — 하지만 성공한 쓰기는 서버를 바꿨으므로 스냅샷이 곧 와서 바로잡는다.
+/// 즉 잠깐의 깜빡임은 있어도 결국 항상 서버와 같은 상태로 수렴한다. 예외는 그대로 다시 던져서
+/// 호출한 쪽(UI)이 사용자에게 알릴 수 있게 한다.
 mixin _OptimisticList<T> on StreamNotifier<List<T>> {
+  List<T>? _serverValue;
+
+  // build()마다 호출된다 — 계정이 바뀌어 다시 만들어질 때 이전 계정의 서버 값이 남지 않게 초기화.
+  Stream<List<T>> _trackServerValue(Stream<List<T>> source) {
+    _serverValue = null;
+    return source.map((value) => _serverValue = value);
+  }
+
   Future<void> _commit(List<T> optimistic, Future<void> Function() write) async {
     final previous = state.value;
     state = AsyncData(optimistic);
     try {
       await write();
     } catch (_) {
-      if (ref.mounted && previous != null) state = AsyncData(previous);
+      final restore = _serverValue ?? previous;
+      if (ref.mounted && restore != null) state = AsyncData(restore);
       rethrow;
     }
   }
@@ -66,7 +79,7 @@ class TodoListNotifier extends StreamNotifier<List<TodoItem>> with _OptimisticLi
   @override
   Stream<List<TodoItem>> build() {
     _repository = ref.watch(todoRepositoryProvider);
-    return _repository.watchItems();
+    return _trackServerValue(_repository.watchItems());
   }
 
   /// 추가에 성공하면 true, 개수 상한(maxTodoItems)에 걸려 추가하지 않았으면 false를 반환한다.
@@ -134,6 +147,24 @@ final memoSaveFailureProvider = NotifierProvider<MemoSaveFailureNotifier, int>(
   MemoSaveFailureNotifier.new,
 );
 
+/// 저장에 실패해 서버에 반영되지 않은 메모 편집이 남아 있는지. [memoSaveFailureProvider]의
+/// 스낵바는 한 번 뜨고 사라져서, 그 뒤 탭을 닫거나 로그아웃하면 저장 안 된 내용이 조용히
+/// 사라질 수 있다 — 저장될 때까지 MemoCard에 계속 표시하고, 로그아웃 전 확인에도 쓴다.
+/// 로그인 계정이 바뀌면(로그아웃 포함) 이전 계정의 상태가 남지 않도록 자동으로 초기화된다.
+class MemoUnsavedEditsNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    ref.watch(authUidProvider);
+    return false;
+  }
+
+  void set(bool value) => state = value;
+}
+
+final memoUnsavedEditsProvider = NotifierProvider<MemoUnsavedEditsNotifier, bool>(
+  MemoUnsavedEditsNotifier.new,
+);
+
 class TodoMemoNotifier extends StreamNotifier<List<MemoItem>> with _OptimisticList<MemoItem> {
   late final TodoRepository _repository;
 
@@ -169,7 +200,7 @@ class TodoMemoNotifier extends StreamNotifier<List<MemoItem>> with _OptimisticLi
       _titleDebounce?.cancel();
       _contentDebounce?.cancel();
     });
-    return _repository.watchMemos();
+    return _trackServerValue(_repository.watchMemos());
   }
 
   /// 개수 상한(maxMemoCount)에 걸리면 추가하지 않고 null을 반환한다. 저장에 실패하면
@@ -280,17 +311,23 @@ class TodoMemoNotifier extends StreamNotifier<List<MemoItem>> with _OptimisticLi
     _publishSaveFailure();
   }
 
+  /// 저장에 실패해 아직 서버에 반영되지 않은 편집이 남아 있는지. [flushPending] 직후에
+  /// 확인하면 "지금 로그아웃하면 잃는 내용이 있는지"를 알 수 있다.
+  bool get hasUnsavedEdits => _titleSaveFailed || _contentSaveFailed;
+
   void _publishSaveFailure() {
-    final failed = _titleSaveFailed || _contentSaveFailed;
+    final failed = hasUnsavedEdits;
     final newlyFailed = failed && !_failureReported;
     _failureReported = failed;
-    if (newlyFailed && ref.mounted) ref.read(memoSaveFailureProvider.notifier).notifyFailure();
+    if (!ref.mounted) return;
+    ref.read(memoUnsavedEditsProvider.notifier).set(failed);
+    if (newlyFailed) ref.read(memoSaveFailureProvider.notifier).notifyFailure();
   }
 
   /// 예약된(또는 이전에 저장에 실패해 남아 있는) 저장을 기다리지 않고 즉시 실행한다.
   /// 로그아웃 직전처럼, 이후로는 저장이 실패할 수 있는 시점에 마지막 편집 내용을 유실하지
-  /// 않으려고 사용한다. 최선을 다한 시도라 저장이 실패해도 예외를 던지지 않고(호출한
-  /// 쪽의 로그아웃 등은 계속 진행), 실패는 [memoSaveFailureProvider]로 알린다.
+  /// 않으려고 사용한다. 최선을 다한 시도라 저장이 실패해도 예외를 던지지 않고, 실패는
+  /// [memoSaveFailureProvider]/[memoUnsavedEditsProvider]와 [hasUnsavedEdits]로 알린다.
   Future<void> flushPending() async {
     _titleDebounce?.cancel();
     _contentDebounce?.cancel();

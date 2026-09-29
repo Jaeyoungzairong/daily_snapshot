@@ -32,6 +32,32 @@ class _InMemoryCloudListStore implements CloudListStore {
 }
 
 void main() {
+  testWidgets(
+    'TodoCard releases focus (hides the keyboard) when tapping outside the input on Android',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: _signedInOverrides(),
+          child: const MaterialApp(
+            home: Scaffold(body: SingleChildScrollView(child: TodoCard())),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      await tester.tap(find.text('할 일'));
+      await tester.pump();
+
+      expect(FocusManager.instance.primaryFocus?.context?.widget, isNot(isA<EditableText>()));
+      expect(tester.testTextInput.isVisible, isFalse);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
   testWidgets('TodoCard renders, adds an item, and toggles it without overflow', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

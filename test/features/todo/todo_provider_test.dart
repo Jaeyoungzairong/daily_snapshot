@@ -1,15 +1,30 @@
+import 'dart:async';
+
+import 'package:daily_snapshot/core/auth/auth_provider.dart';
 import 'package:daily_snapshot/features/todo/application/todo_provider.dart';
 import 'package:daily_snapshot/features/todo/data/cloud_list_store.dart';
 import 'package:daily_snapshot/features/todo/data/todo_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Firestore의 snapshots()처럼 구독 시 현재 값을 한 번 보내고, 쓰기가 성공할 때마다 새 값을
+/// 다시 내보내는 인메모리 저장소. 한 번만 값을 보내는 가짜 저장소로는 "성공한 쓰기의 스냅샷이
+/// 뒤늦게 도착해 화면을 바로잡는" 실제 동작을 재현할 수 없어, 롤백 로직을 잘못 검증하게 된다.
 class _InMemoryCloudListStore implements CloudListStore {
   final Map<String, List<Map<String, dynamic>>> _docs = {};
+  final Map<String, Set<StreamController<List<Map<String, dynamic>>>>> _listeners = {};
 
   @override
-  Stream<List<Map<String, dynamic>>> watch(String docKey) async* {
-    yield _docs[docKey] ?? [];
+  Stream<List<Map<String, dynamic>>> watch(String docKey) {
+    late final StreamController<List<Map<String, dynamic>>> controller;
+    controller = StreamController(
+      onListen: () {
+        controller.add(List.of(_docs[docKey] ?? []));
+        _listeners.putIfAbsent(docKey, () => {}).add(controller);
+      },
+      onCancel: () => _listeners[docKey]?.remove(controller),
+    );
+    return controller.stream;
   }
 
   @override
@@ -18,6 +33,9 @@ class _InMemoryCloudListStore implements CloudListStore {
     List<Map<String, dynamic>> Function(List<Map<String, dynamic>> current) transform,
   ) async {
     _docs[docKey] = transform(_docs[docKey] ?? []);
+    for (final controller in _listeners[docKey] ?? const <StreamController<Never>>{}) {
+      controller.add(List.of(_docs[docKey]!));
+    }
   }
 }
 
@@ -41,6 +59,7 @@ class _FlakyCloudListStore extends _InMemoryCloudListStore {
 ProviderContainer _makeContainer([CloudListStore? store]) {
   final container = ProviderContainer(
     overrides: [
+      authUidProvider.overrideWith((ref) => const AsyncData('test-uid')),
       todoRepositoryProvider.overrideWithValue(
         TodoRepository(store: store ?? _InMemoryCloudListStore()),
       ),
@@ -158,6 +177,45 @@ void main() {
       final items = container.read(todoListProvider).value!;
       expect(items, hasLength(2));
       expect(items.first.done, isFalse);
+    });
+
+    test('two overlapping writes that both fail leave the server state on screen', () async {
+      final store = _FlakyCloudListStore();
+      final container = _makeContainer(store);
+      await container.read(todoListProvider.future);
+      final notifier = container.read(todoListProvider.notifier);
+      await notifier.add('A');
+      await notifier.add('B');
+      await pumpEventQueue();
+      final ids = container.read(todoListProvider).value!.map((i) => i.id).toList();
+
+      // 오프라인에서 체크박스 두 개를 연달아 누른 상황 — 첫 쓰기가 끝나기 전에 두 번째가 시작된다.
+      store.failing = true;
+      final first = notifier.toggle(ids[0]);
+      final second = notifier.toggle(ids[1]);
+      await expectLater(first, throwsException);
+      await expectLater(second, throwsException);
+
+      final items = container.read(todoListProvider).value!;
+      expect(items.map((i) => i.done), [false, false]);
+    });
+
+    test('a failure after another write succeeded keeps the succeeded change', () async {
+      final store = _FlakyCloudListStore();
+      final container = _makeContainer(store);
+      await container.read(todoListProvider.future);
+      final notifier = container.read(todoListProvider.notifier);
+      await notifier.add('A');
+      await notifier.add('B');
+      final ids = container.read(todoListProvider).value!.map((i) => i.id).toList();
+
+      await notifier.toggle(ids[1]);
+      await pumpEventQueue();
+      store.failing = true;
+      await expectLater(notifier.toggle(ids[0]), throwsException);
+
+      final items = container.read(todoListProvider).value!;
+      expect(items.map((i) => i.done), [false, true]);
     });
 
     test('changes persist across a fresh provider read via the same repository', () async {
@@ -314,9 +372,19 @@ void main() {
         // 있고, 실패 알림은 한 번만 센다.
         expect(container.read(memoSaveFailureProvider), 1);
         expect(container.read(todoMemoProvider).value!.first.title, '실패할 제목');
+        // 스낵바와 달리 저장될 때까지 계속 남는 "저장 안 된 편집" 상태.
+        expect(container.read(memoUnsavedEditsProvider), isTrue);
+        expect(notifier.hasUnsavedEdits, isTrue);
+
+        // 여전히 실패하는 동안 재시도해도 상태는 유지된다(로그아웃 전 확인이 이 값을 본다).
+        await notifier.flushPending();
+        expect(notifier.hasUnsavedEdits, isTrue);
+        expect(container.read(memoSaveFailureProvider), 1);
 
         store.failing = false;
         await notifier.flushPending();
+        expect(container.read(memoUnsavedEditsProvider), isFalse);
+        expect(notifier.hasUnsavedEdits, isFalse);
         // 저장이 다시 성공했으니 실패 카운트는 더 늘지 않는다.
         final failureCountAfterRetry = container.read(memoSaveFailureProvider);
         container.dispose();
@@ -326,7 +394,10 @@ void main() {
         // 낙관적 표시를 유지하므로), 같은 저장소를 새 컨테이너로 다시 읽어 flushPending이
         // 실제로 저장을 재시도했는지 확인한다.
         final freshContainer = ProviderContainer(
-          overrides: [todoRepositoryProvider.overrideWithValue(TodoRepository(store: store))],
+          overrides: [
+            authUidProvider.overrideWith((ref) => const AsyncData('test-uid')),
+            todoRepositoryProvider.overrideWithValue(TodoRepository(store: store)),
+          ],
         );
         addTearDown(freshContainer.dispose);
         freshContainer.listen(todoMemoProvider, (_, _) {});

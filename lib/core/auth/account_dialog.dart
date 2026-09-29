@@ -13,12 +13,13 @@ import 'sign_in_prompt.dart';
 /// 이메일과 로그아웃 버튼을 보여준다.
 ///
 /// [onBeforeSignOut]은 로그아웃 직전에 호출된다 — 예를 들어 다른 기능이 디바운스 저장
-/// 중인 내용을 flush해야 하는 경우 여기 넘긴다. core 레이어인 이 파일이 특정 feature의
-/// provider를 직접 알 필요가 없도록 콜백으로 분리했다.
+/// 중인 내용을 flush해야 하는 경우 여기 넘긴다. 모두 저장됐으면 true, 저장하지 못한 내용이
+/// 남았으면 false를 반환하고, false면 로그아웃해서 그 내용을 잃어도 되는지 사용자에게 묻는다.
+/// core 레이어인 이 파일이 특정 feature의 provider를 직접 알 필요가 없도록 콜백으로 분리했다.
 class AccountDialog extends ConsumerStatefulWidget {
   const AccountDialog({super.key, this.onBeforeSignOut});
 
-  final Future<void> Function()? onBeforeSignOut;
+  final Future<bool> Function()? onBeforeSignOut;
 
   @override
   ConsumerState<AccountDialog> createState() => _AccountDialogState();
@@ -28,20 +29,39 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
   bool _signingOut = false;
   bool _linkingGoogle = false;
 
+  /// 로그아웃 전에 저장 대기 중인 편집을 저장한다(저장 타이머가 아직 안 돈 직전 입력 포함).
+  /// 저장하지 못한 내용이 남으면(오프라인 등) 로그아웃하면 사라진다는 걸 알리고 계속할지
+  /// 묻는다 — 예전엔 실패해도 조용히 로그아웃돼 입력한 내용이 사라졌다. 진행해도 되면 true.
+  /// false를 반환할 때는 [_signingOut]을 되돌려 둔다.
+  Future<bool> _saveBeforeSignOut() async {
+    bool saved;
+    try {
+      saved = await widget.onBeforeSignOut?.call() ?? true;
+    } catch (_) {
+      saved = false;
+    }
+    if (saved) return true;
+    if (!mounted) return false;
+    final proceed = await confirmAction(
+      context,
+      title: '저장되지 않은 메모',
+      message:
+          '메모 일부를 저장하지 못했습니다. 네트워크 연결을 확인해주세요.\n'
+          '지금 로그아웃하면 저장되지 않은 내용은 사라집니다.',
+      confirmLabel: '그래도 로그아웃',
+    );
+    if (!proceed && mounted) setState(() => _signingOut = false);
+    return proceed;
+  }
+
   Future<void> _signOut() async {
     // 계정 다이얼로그를 직접 열고 로그아웃 버튼을 눌러야만 여기 도달하므로, 그 자체가
-    // 이미 의도 확인 단계다 — 별도 확인 다이얼로그를 한 번 더 띄우지 않는다.
+    // 이미 의도 확인 단계다 — 별도 확인 다이얼로그를 한 번 더 띄우지 않는다(저장 못 한
+    // 내용이 있을 때만 _saveBeforeSignOut이 묻는다).
     if (_signingOut) return;
 
     setState(() => _signingOut = true);
-
-    // 저장 타이머가 아직 안 돌았다면(로그아웃 직전에 입력한 경우), 로그인 상태가
-    // 사라지기 전에 지금 즉시 저장해서 마지막 편집 내용이 유실되지 않게 한다.
-    try {
-      await widget.onBeforeSignOut?.call();
-    } catch (_) {}
-
-    if (!mounted) return;
+    if (!await _saveBeforeSignOut() || !mounted) return;
     try {
       // signOut() 직후 아직 살아있는 할일/메모/파일함 리스너가 인증 컨텍스트 소실로
       // permission-denied를 받을 수 있는데, 이걸 dashboard_page.dart가 "다른 기기에서
@@ -75,11 +95,7 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
     if (!confirmed || !mounted) return;
 
     setState(() => _signingOut = true);
-    try {
-      await widget.onBeforeSignOut?.call();
-    } catch (_) {}
-
-    if (!mounted) return;
+    if (!await _saveBeforeSignOut() || !mounted) return;
     try {
       // 이 기기는 본인이 의도적으로 누른 동작이므로, dashboard_page.dart의 세션 무효화
       // 감지(isSessionValidProvider)가 이 요청으로 갱신된 forceLogoutAfter를 보고 "세션이
@@ -114,15 +130,13 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
         return;
       }
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(describeAuthError(error))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(describeAuthError(error))));
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(describeAuthError(error))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(describeAuthError(error))));
       }
     } finally {
       if (mounted) setState(() => _linkingGoogle = false);
@@ -147,11 +161,7 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
     if (!confirmed || !mounted) return;
 
     setState(() => _signingOut = true);
-    try {
-      await widget.onBeforeSignOut?.call();
-    } catch (_) {}
-
-    if (!mounted) return;
+    if (!await _saveBeforeSignOut() || !mounted) return;
     try {
       ref.read(sessionInvalidationHandledProvider.notifier).set(true);
       await ref.read(authServiceProvider).unlinkGoogleAccount();
@@ -160,9 +170,8 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
     } catch (error) {
       ref.read(sessionInvalidationHandledProvider.notifier).set(false);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(describeAuthError(error))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(describeAuthError(error))));
       }
     } finally {
       if (mounted) setState(() => _signingOut = false);
@@ -197,7 +206,7 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
               backgroundColor: colorScheme.primaryContainer,
               foregroundColor: colorScheme.onPrimaryContainer,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 8),
             authState.when(
               loading: () =>
                   const SizedBox(height: 80, child: Center(child: CircularProgressIndicator())),
@@ -289,7 +298,7 @@ class _SignedInContent extends StatelessWidget {
               label: Text(isGoogleLinked ? 'Google 계정 연동 해제하기' : 'Google 계정 연동하기'),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
         ],
         SizedBox(
           width: double.infinity,

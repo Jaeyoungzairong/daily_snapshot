@@ -101,6 +101,9 @@ class _TodoCardState extends ConsumerState<TodoCard> {
                     //hintText: '예: 3시 팀 미팅 자료 준비',
                   ),
                   onSubmitted: (_) => _addItem(),
+                  // Flutter는 모바일 앱에서 입력창 바깥을 터치해도 포커스를 풀지 않아(웹·마우스만
+                  // 해제) "+" 버튼 등 다른 곳을 눌러도 키보드가 계속 떠 있었다.
+                  onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                 ),
               ),
               const SizedBox(width: 8),
