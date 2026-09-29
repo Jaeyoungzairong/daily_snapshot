@@ -102,6 +102,20 @@ android/    안드로이드 네이티브 프로젝트(Gradle). google-services.j
   상태를 `memoUnsavedEditsProvider`(배너, 계정 바뀌면 자동 초기화)와 `memoSaveFailureProvider`
   (스낵바, 실패 상태로 바뀔 때 한 번만)로 알린다. `AccountDialog.onBeforeSignOut`은 모두 저장됐는지
   `bool`을 돌려주고, false면 "그래도 로그아웃" 확인을 받는다(core가 todo provider를 직접 모르게 콜백 유지).
+- **메모 편집창은 다른 기기의 변경을 "사용자가 안 건드린 필드만" 따라간다(`MemoCard._syncField`).**
+  예전엔 처음 로드/메모 선택 때만 채워서, 오래 켜둔 탭·백그라운드에서 돌아온 안드로이드에서 한 글자만
+  쳐도 옛 전체 내용이 저장돼 다른 기기의 수정이 조용히 사라졌다. 포커스가 아니라 "마지막으로 채운
+  값(`_syncedTitle/Content`)과 같은지 + 대기 중인 저장이 없는지"로 판단한다 — 앱 복귀 시 포커스가
+  남아 있을 수 있고, 쳤다 지워 원래대로 돌아와도 디바운스 타이머가 살아 있으면 옛 값이 원격 변경을
+  되덮기 때문. 양쪽 동시 입력은 여전히 나중 저장이 이김(README 알려진 이슈).
+- **로그인 절차 중에는 `signInInProgressProvider`가 true.** Google 로그인·이메일 링크 완료는 Firebase
+  로그인 → 승인 확인 순서라 uid가 잠깐 생긴다. 그동안 `AccountDialog`는 자동으로 닫히지 않고
+  SignInPrompt를 유지하며(안 그러면 미승인 안내가 사라진 다이얼로그에 버려짐), 대시보드는 권한 거부를
+  세션 만료로 처리하지 않는다(먼저 로그아웃시키면 새 계정 삭제가 실패해 빈 계정이 남음).
+- **"모든 기기 로그아웃"·연동 해제는 서버에 닿는지 먼저 확인한다(`AuthService.ensureServerReachable`,
+  `Source.server` 조회 + 10초 타임아웃).** Firestore 쓰기는 오프라인이면 무기한 대기하고, 웹 탭을 닫으면
+  대기 쓰기가 사라져 "로그아웃시켰다"고 믿은 채 아무 일도 없었다. 오프라인이면 시작하지 않고
+  `ServerUnreachableException`으로 안내한다.
 - **이메일 링크 로그인 완료(`completeSignInIfLink`)는 승인 여부를 `signInWithEmailLink`보다 먼저
   확인하고, 저장된 요청 이메일은 로그인 성공 후에만 지운다.** 예전엔 먼저 지워서 일시적 오류 한 번에
   같은 링크로 재시도할 방법이 사라졌다. 실패는 `isTerminalSignInLinkError`로 분류해, 만료·저장된
@@ -117,6 +131,10 @@ android/    안드로이드 네이티브 프로젝트(Gradle). google-services.j
   보존한다(`TodoRepository._watch`/`_mutate`).** 예전엔 한 항목만 깨져도 스트림 전체가 에러가 돼
   카드가 마비되고 "다시 시도"로도 복구가 안 됐다. 단 `items`가 배열이 아니거나 배열 안의 맵이 아닌
   값은 `CloudListStore._itemsOf`에서 걸러져 다음 쓰기 때 사라진다(수동 편집에서만 생기는 경우라 수용).
+- **Hosting 캐시는 전 파일 `no-cache`(2026-09-29).** Flutter 웹 산출물은 파일명에 해시가 없어
+  예전의 1년 `immutable` 캐시 때문에 배포 후에도 사용자가 옛 `main.dart.js`를 계속 실행했다 — 장기
+  캐시를 다시 제안하지 말 것. `web/index.html`·`web/flutter_bootstrap.js`의 `?v=2`는 그 옛 캐시를
+  탈출시키는 1회성 값이라 배포마다 올릴 필요 없음.
 - **배포는 전부 Firebase 콘솔에서 수동(2026-09-28 결정).** 웹 Hosting만 `main` push 시 GitHub
   Actions로 자동 배포. 안드로이드 APK는 로컬 `flutter build apk` 후 App Distribution 콘솔에 업로드 —
   서명 키·`google-services.json`을 GitHub Secrets에 올리지 않기로 사용자가 명시적으로 결정했고,

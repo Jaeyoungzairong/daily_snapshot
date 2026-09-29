@@ -25,6 +25,85 @@ class _MemoCardState extends ConsumerState<MemoCard> {
   String? _selectedMemoId;
   bool _retryingSave = false;
 
+  // 편집창에 마지막으로 채워 넣은 서버 값. 편집창이 이 값과 같으면 "그 뒤로 사용자가 고치지
+  // 않았다"는 뜻이라, 다른 기기에서 바뀐 값이 스트림으로 오면 편집창도 따라가도 안전하다
+  // ([_syncSelectedMemoFromServer] 참고).
+  String? _syncedTitle;
+  String? _syncedContent;
+
+  void _fillEditor(MemoItem memo) {
+    _selectedMemoId = memo.id;
+    _memoTitleController.text = memo.title;
+    _memoContentController.text = memo.content;
+    _syncedTitle = memo.title;
+    _syncedContent = memo.content;
+  }
+
+  void _clearEditor() {
+    _selectedMemoId = null;
+    _memoTitleController.clear();
+    _memoContentController.clear();
+    _syncedTitle = null;
+    _syncedContent = null;
+  }
+
+  /// 선택된 메모가 다른 기기(또는 다른 탭)에서 바뀌었을 때 편집창을 최신 값으로 맞춘다.
+  ///
+  /// 예전엔 편집창이 처음 불러올 때와 메모를 고를 때만 채워져서, 탭을 오래 켜두거나 안드로이드
+  /// 앱을 백그라운드에서 다시 연 뒤 한 글자만 쳐도 옛 전체 내용이 저장돼 다른 기기에서 고친
+  /// 내용이 조용히 사라졌다. 포커스 여부가 아니라 "마지막으로 채운 뒤 사용자가 고쳤는지"로
+  /// 판단한다 — 앱을 다시 열면 입력창에 포커스가 남아 있을 수 있어 포커스 기준으로는 정작 이
+  /// 경우를 놓친다. 제목/내용은 따로 판단해서, 한쪽을 입력 중이어도 다른 쪽은 따라간다.
+  void _syncSelectedMemoFromServer(List<MemoItem> memos) {
+    final id = _selectedMemoId;
+    if (id == null) return;
+    final index = memos.indexWhere((memo) => memo.id == id);
+    if (index == -1) return;
+    final memo = memos[index];
+    final notifier = ref.read(todoMemoProvider.notifier);
+    _syncedTitle = _syncField(
+      _memoTitleController,
+      synced: _syncedTitle,
+      server: memo.title,
+      hasPendingEdit: notifier.hasPendingTitleFor(id),
+    );
+    _syncedContent = _syncField(
+      _memoContentController,
+      synced: _syncedContent,
+      server: memo.content,
+      hasPendingEdit: notifier.hasPendingContentFor(id),
+    );
+  }
+
+  /// 편집창 하나를 서버 값에 맞추고, 새로 기억할 "마지막으로 채운 값"을 돌려준다.
+  String? _syncField(
+    TextEditingController controller, {
+    required String? synced,
+    required String server,
+    required bool hasPendingEdit,
+  }) {
+    // 이미 같음 — 내 저장이 반영돼 돌아온 경우 등. 기준값만 맞춘다.
+    if (controller.text == server) return server;
+    // 사용자가 고친 뒤 아직 저장 중/저장 실패로 남은 값이 있거나, 마지막으로 채운 뒤 직접
+    // 고쳤으면 입력 중인 글을 덮어쓰지 않는다(동시 편집은 나중 저장이 이기는 알려진 한계).
+    // 대기 값을 같이 보는 이유: 쳤다가 지워 원래대로 돌아온 경우 편집창은 기준값과 같지만
+    // 디바운스 타이머가 살아 있어, 지금 바꾸면 곧 옛 값이 저장돼 원격 변경을 되덮는다.
+    if (hasPendingEdit || controller.text != synced) return synced;
+    // .text로 바꾸면 커서가 끝으로 튄다 — 입력창에 포커스가 있을 수 있어 위치를 유지한다.
+    final selection = controller.selection;
+    int clamp(int offset) => offset.clamp(0, server.length);
+    controller.value = TextEditingValue(
+      text: server,
+      selection: selection.isValid
+          ? TextSelection(
+              baseOffset: clamp(selection.baseOffset),
+              extentOffset: clamp(selection.extentOffset),
+            )
+          : TextSelection.collapsed(offset: server.length),
+    );
+    return server;
+  }
+
   @override
   void dispose() {
     _memoTitleController.dispose();
@@ -42,11 +121,7 @@ class _MemoCardState extends ConsumerState<MemoCard> {
     final index = memos.indexWhere((memo) => memo.id == id);
     if (index == -1) return;
     final memo = memos[index];
-    setState(() {
-      _selectedMemoId = memo.id;
-      _memoTitleController.text = memo.title;
-      _memoContentController.text = memo.content;
-    });
+    setState(() => _fillEditor(memo));
   }
 
   Future<void> _addMemo() async {
@@ -81,11 +156,7 @@ class _MemoCardState extends ConsumerState<MemoCard> {
     if (!saved || !mounted) return;
     final remaining = ref.read(todoMemoProvider).value ?? [];
     if (remaining.isEmpty) {
-      setState(() {
-        _selectedMemoId = null;
-        _memoTitleController.clear();
-        _memoContentController.clear();
-      });
+      setState(_clearEditor);
     } else {
       _selectMemo(remaining.first.id);
     }
@@ -145,10 +216,8 @@ class _MemoCardState extends ConsumerState<MemoCard> {
     // 잘못 남아있지 않도록 초기화한다.
     ref.listen(authUidProvider, (previous, next) {
       if (next.value == null) {
-        _selectedMemoId = null;
         _memoInitialized = false;
-        _memoTitleController.clear();
-        _memoContentController.clear();
+        _clearEditor();
       }
     });
 
@@ -173,6 +242,14 @@ class _MemoCardState extends ConsumerState<MemoCard> {
   Widget _buildSignedInContent() {
     final memosAsync = ref.watch(todoMemoProvider);
 
+    // 처음 도착한 값은 아래 data 분기의 초기화 블록이 채운다. 여기서는 그 뒤 "바뀐" 값만
+    // 반영하면 되므로 ref.listen으로 충분하다(ref.listen이 등록 시점의 값엔 반응하지 않는 건
+    // 여기선 문제가 안 됨).
+    ref.listen(todoMemoProvider, (previous, next) {
+      final memos = next.value;
+      if (_memoInitialized && memos != null) _syncSelectedMemoFromServer(memos);
+    });
+
     return memosAsync.when(
       loading: () => const LoadingView(),
       // 같은 이유로 todoMemoProvider만 다시 구독하도록 invalidate한다 — 전체 페이지를
@@ -189,11 +266,7 @@ class _MemoCardState extends ConsumerState<MemoCard> {
         // 카드가 재마운트될 때) 영영 초기 선택이 안 채워지는 문제가 있었다.
         if (!_memoInitialized) {
           _memoInitialized = true;
-          if (memos.isNotEmpty) {
-            _selectedMemoId = memos.first.id;
-            _memoTitleController.text = memos.first.title;
-            _memoContentController.text = memos.first.content;
-          }
+          if (memos.isNotEmpty) _fillEditor(memos.first);
         }
         final hasUnsavedEdits = ref.watch(memoUnsavedEditsProvider);
         return Column(

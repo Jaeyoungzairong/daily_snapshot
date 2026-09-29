@@ -8,6 +8,22 @@ import 'package:http/http.dart' as http;
 import '../../../core/network/api_client.dart';
 import 'file_entry.dart';
 
+/// Firestore 문서들을 [FileEntry]로 바꾸되, 필드가 빠졌거나 타입이 다른 문서는 건너뛴다.
+///
+/// 공유 파일함은 모든 사용자가 같은 컬렉션을 보므로, 예전엔 문서 하나만 깨져도(콘솔 수동 편집
+/// 실수, 규칙이 필드를 검증하지 않아 들어온 잘못된 문서 등) 스트림 전체가 에러가 돼 **모든
+/// 사용자의** 파일함이 에러 화면으로 바뀌었다. 할일/메모(TodoRepository._watch)와 같은 방식으로
+/// 읽을 수 있는 문서만 보여준다 — 건너뛴 문서는 지우지 않으므로 콘솔에서 고치면 다시 나타난다.
+List<FileEntry> readableFileEntries(Iterable<(String id, Map<String, dynamic> data)> docs) {
+  final entries = <FileEntry>[];
+  for (final (id, data) in docs) {
+    try {
+      entries.add(FileEntry.fromJson(id, data));
+    } catch (_) {}
+  }
+  return entries;
+}
+
 /// 공유 파일함을 Firestore(메타데이터)+Storage(실 파일)에 저장·조회한다.
 ///
 /// todo/memo와 달리 파일마다 문서 하나(shared_files/{fileId})를 쓴다 — 삭제/순서변경 같은
@@ -36,7 +52,8 @@ class FileRepository {
         .orderBy('uploadedAt', descending: true)
         .snapshots()
         .map(
-          (snapshot) => snapshot.docs.map((doc) => FileEntry.fromJson(doc.id, doc.data())).toList(),
+          (snapshot) =>
+              readableFileEntries([for (final doc in snapshot.docs) (doc.id, doc.data())]),
         );
   }
 

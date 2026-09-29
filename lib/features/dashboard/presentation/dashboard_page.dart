@@ -111,6 +111,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
   void _signOutForInvalidSession() {
     if (ref.read(sessionInvalidationHandledProvider)) return;
+    // 로그인 절차가 승인 확인 중일 때의 권한 거부는 세션 만료가 아니다 — 미승인이면 그 절차가
+    // 직접 정리(로그아웃 또는 새 계정 삭제)한다. 여기서 먼저 로그아웃시키면 새 계정 삭제가
+    // 실패해 빈 계정이 남고, "세션이 만료" 안내도 잘못 뜬다(signInInProgressProvider 참고).
+    if (ref.read(signInInProgressProvider)) return;
     ref.read(sessionInvalidationHandledProvider.notifier).set(true);
 
     ref.read(authServiceProvider).signOut();

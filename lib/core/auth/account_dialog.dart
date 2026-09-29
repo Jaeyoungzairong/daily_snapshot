@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/dialog_header_icon.dart';
 import 'auth_provider.dart';
+import 'auth_service.dart';
 import 'sign_in_prompt.dart';
 
 /// 로그인/로그아웃을 모두 처리하는 계정 다이얼로그. 로그인 안 됐으면 기존 [SignInPrompt]를
@@ -24,6 +25,8 @@ class AccountDialog extends ConsumerStatefulWidget {
   @override
   ConsumerState<AccountDialog> createState() => _AccountDialogState();
 }
+
+const String _offlineMessage = '네트워크에 연결되어 있지 않습니다. 연결을 확인한 뒤 다시 시도해주세요.';
 
 class _AccountDialogState extends ConsumerState<AccountDialog> {
   bool _signingOut = false;
@@ -104,11 +107,16 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
       ref.read(sessionInvalidationHandledProvider.notifier).set(true);
       await ref.read(authServiceProvider).forceLogoutAllDevices();
       if (mounted) Navigator.of(context).pop();
-    } catch (_) {
+    } catch (error) {
       ref.read(sessionInvalidationHandledProvider.notifier).set(false);
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('로그아웃에 실패했습니다. 다시 시도해주세요.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is ServerUnreachableException ? _offlineMessage : '로그아웃에 실패했습니다. 다시 시도해주세요.',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _signingOut = false);
@@ -162,16 +170,32 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
 
     setState(() => _signingOut = true);
     if (!await _saveBeforeSignOut() || !mounted) return;
+    final authService = ref.read(authServiceProvider);
+    var unlinked = false;
     try {
       ref.read(sessionInvalidationHandledProvider.notifier).set(true);
-      await ref.read(authServiceProvider).unlinkGoogleAccount();
-      await ref.read(authServiceProvider).forceLogoutAllDevices();
+      // 연동 해제만 되고 모든 기기 로그아웃이 오프라인으로 막히면, 연동은 풀렸는데 안드로이드
+      // 세션은 살아 있는 어중간한 상태가 된다 — 시작 전에 서버에 닿는지 먼저 확인한다.
+      await authService.ensureServerReachable();
+      await authService.unlinkGoogleAccount();
+      unlinked = true;
+      await authService.forceLogoutAllDevices();
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
       ref.read(sessionInvalidationHandledProvider.notifier).set(false);
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(describeAuthError(error))));
+        final String message;
+        if (unlinked) {
+          // 확인 직후 연결이 끊긴 드문 경우 — 연동은 이미 풀렸으니 남은 단계만 다시 하게 한다.
+          message =
+              'Google 계정 연동은 해제됐지만 다른 기기 로그아웃에 실패했습니다. '
+              '연결을 확인한 뒤 "다른 모든 기기에서 로그아웃"을 눌러주세요.';
+        } else if (error is ServerUnreachableException) {
+          message = _offlineMessage;
+        } else {
+          message = describeAuthError(error);
+        }
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => _signingOut = false);
@@ -180,14 +204,23 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // 이 다이얼로그 안에서 로그인이 완료되면(이메일 링크 확인 등) 자동으로 닫아준다.
+    // 이 다이얼로그 안에서 로그인이 완료되면(이메일 링크 확인 등) 자동으로 닫아준다. 단 로그인
+    // 절차가 승인 확인 중이면(signInInProgressProvider) uid가 생겨도 아직 닫지 않는다 — 미승인이면
+    // 곧 로그아웃되고, 그 안내를 이 다이얼로그 안의 SignInPrompt가 보여줘야 하기 때문. 절차가
+    // 끝났을 때 로그인 상태로 남아 있으면 그때 닫는다.
     ref.listen(authUidProvider, (previous, next) {
-      if (previous?.value == null && next.value != null) {
+      if (previous?.value == null && next.value != null && !ref.read(signInInProgressProvider)) {
+        Navigator.of(context).pop();
+      }
+    });
+    ref.listen(signInInProgressProvider, (previous, next) {
+      if (previous == true && !next && ref.read(authUidProvider).value != null) {
         Navigator.of(context).pop();
       }
     });
 
     final authState = ref.watch(authUidProvider);
+    final signInInProgress = ref.watch(signInInProgressProvider);
     final email = ref.watch(authEmailProvider).value;
     final signedIn = authState.value != null;
     final colorScheme = Theme.of(context).colorScheme;
@@ -211,7 +244,9 @@ class _AccountDialogState extends ConsumerState<AccountDialog> {
               loading: () =>
                   const SizedBox(height: 80, child: Center(child: CircularProgressIndicator())),
               error: (error, _) => Text('로그인 상태를 확인할 수 없습니다: $error'),
-              data: (uid) => uid == null
+              // 로그인 절차 중에는 uid가 잠깐 생겨도 SignInPrompt를 그대로 둔다 — 여기서
+              // _SignedInContent로 바뀌면 SignInPrompt가 사라져 이어질 미승인 안내를 못 보여준다.
+              data: (uid) => uid == null || signInInProgress
                   ? const SignInPrompt()
                   : _SignedInContent(
                       email: email,

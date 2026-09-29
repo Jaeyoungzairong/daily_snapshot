@@ -56,6 +56,14 @@ class _FlakyCloudListStore extends _InMemoryCloudListStore {
   }
 }
 
+/// 계정 전환 테스트용 로그인 uid.
+class _TestUid extends Notifier<String> {
+  @override
+  String build() => 'uid-a';
+
+  void set(String value) => state = value;
+}
+
 ProviderContainer _makeContainer([CloudListStore? store]) {
   final container = ProviderContainer(
     overrides: [
@@ -405,5 +413,60 @@ void main() {
         expect(reloaded.first.title, '실패할 제목');
       },
     );
+  });
+
+  // Riverpod은 provider를 다시 빌드할 때 Notifier 인스턴스를 재사용하고 build()만 다시
+  // 부른다 — 예전엔 _repository가 late final이라 두 번째 build()에서 LateInitializationError가
+  // 나 할일/메모 카드가 앱을 다시 시작할 때까지 복구되지 않았다.
+  group('rebuilding the notifiers', () {
+    test('invalidate ("다시 시도") rebuilds todo/memo without error', () async {
+      final container = _makeContainer();
+      await container.read(todoListProvider.future);
+      await container.read(todoMemoProvider.future);
+      await container.read(todoListProvider.notifier).add('할 일');
+
+      container.invalidate(todoListProvider);
+      container.invalidate(todoMemoProvider);
+      final items = await container.read(todoListProvider.future);
+      await container.read(todoMemoProvider.future);
+
+      expect(container.read(todoListProvider).hasError, isFalse);
+      expect(container.read(todoMemoProvider).hasError, isFalse);
+      expect(items.single.text, '할 일');
+      // 다시 빌드된 뒤에도 쓰기가 정상 동작해야 한다.
+      await container.read(todoListProvider.notifier).add('두 번째');
+      expect(container.read(todoListProvider).value, hasLength(2));
+    });
+
+    test('switching accounts rebuilds against the new account\'s repository', () async {
+      final stores = {'uid-a': _InMemoryCloudListStore(), 'uid-b': _InMemoryCloudListStore()};
+      final uid = NotifierProvider<_TestUid, String>(_TestUid.new);
+      final container = ProviderContainer(
+        overrides: [
+          authUidProvider.overrideWith((ref) => AsyncData(ref.watch(uid))),
+          todoRepositoryProvider.overrideWith(
+            (ref) => TodoRepository(store: stores[ref.watch(uid)]!),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(todoListProvider, (_, _) {});
+      container.listen(todoMemoProvider, (_, _) {});
+
+      await container.read(todoListProvider.future);
+      await container.read(todoMemoProvider.future);
+      await container.read(todoListProvider.notifier).add('A의 할 일');
+
+      container.read(uid.notifier).set('uid-b');
+      final itemsB = await container.read(todoListProvider.future);
+      await container.read(todoMemoProvider.future);
+
+      expect(container.read(todoListProvider).hasError, isFalse);
+      expect(container.read(todoMemoProvider).hasError, isFalse);
+      expect(itemsB, isEmpty);
+      // 새 계정에서의 쓰기는 새 계정 저장소에만 들어가야 한다.
+      await container.read(todoListProvider.notifier).add('B의 할 일');
+      expect(container.read(todoListProvider).value!.single.text, 'B의 할 일');
+    });
   });
 }
