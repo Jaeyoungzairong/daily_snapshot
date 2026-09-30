@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -16,6 +18,11 @@ class NotApprovedException implements Exception {
 /// 대개 링크를 요청한 기기/브라우저와 다른 곳에서 링크를 열었을 때 발생한다.
 class PendingEmailNotFoundException implements Exception {
   const PendingEmailNotFoundException();
+}
+
+/// 네트워크가 끊겨 서버에 닿지 못해 작업을 시작하지 않았거나(또는 끝내지 못했을 때) 던진다.
+class ServerUnreachableException implements Exception {
+  const ServerUnreachableException();
 }
 
 /// Firebase 인증을 감싼다. 할 일/메모(Firestore)는 이메일 링크 로그인 뒤에만 쓸 수 있고,
@@ -174,12 +181,17 @@ class AuthService {
     final credential = GoogleAuthProvider.credential(
       idToken: account.authentication.idToken,
     );
-    await _auth.signInWithCredential(credential);
+    final result = await _auth.signInWithCredential(credential);
     // 미승인이면 로컬 세션만 끊는 게 아니라 방금 막 생성된 계정 자체를 지운다(아래
     // _ensureApproved 참고) — 그냥 signOut만 하면 화이트리스트에 없는 Google 계정으로
     // 서버에 빈 계정만 남아, 나중에 그 계정을 웹에서 연동하려 할 때
     // credential-already-in-use로 막히는 문제가 있었다.
-    await _ensureApproved(deleteIfUnapproved: true);
+    //
+    // 단, 이번 로그인으로 "새로 생성된" 계정일 때만 지운다. 이미 연동된 기존 계정이
+    // 관리자에 의해 일시 정지(isActive: false)된 상태에서 로그인하면 기존 uid로 들어오는데,
+    // 이걸 지우면 이메일 링크 계정·연동이 통째로 사라지고 재활성화 후엔 새 uid가 만들어져
+    // users/{옛uid}의 할일/메모에 접근할 수 없게 된다. isNewUser를 알 수 없으면 지우지 않는다.
+    await _ensureApproved(deleteIfUnapproved: result.additionalUserInfo?.isNewUser ?? false);
   }
 
   /// 웹 전용: 지금 로그인된 회사메일 계정에 Google 계정을 추가로 연동한다. 이후
@@ -219,19 +231,54 @@ class AuthService {
   /// 남기고 나머지만" 대신 전부 로그아웃시키는 것으로 설계했다 — 이 기기도 다음 요청부터
   /// 막히므로, 곧바로 로컬 세션도 정리해서 "로그인된 것처럼 보이는데 아무 것도 안 되는"
   /// 상태가 되지 않게 한다.
+  ///
+  /// 오프라인이면 시작하지 않고 [ServerUnreachableException]을 던진다 — Firestore 쓰기는
+  /// 오프라인이면 서버가 받을 때까지 Future가 끝나지 않아 스피너가 무기한 돌았고, 그 사이 웹
+  /// 탭을 닫으면 대기 중이던 쓰기가 사라져 "다른 기기를 로그아웃시켰다"고 믿은 채 실제로는
+  /// 아무 일도 없었다(이 기능은 다른 PC에 남겨둔 세션을 끊는 보안 용도라 조용한 실패가 위험).
   Future<void> forceLogoutAllDevices() async {
     final email = _auth.currentUser?.email;
     if (email == null) return;
-    await _firestore.collection('admin_allowed_emails').doc(email.toLowerCase()).set({
-      'forceLogoutAfter': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    final docRef = _firestore.collection('admin_allowed_emails').doc(email.toLowerCase());
+    await ensureServerReachable();
+    try {
+      await docRef
+          .set({'forceLogoutAfter': FieldValue.serverTimestamp()}, SetOptions(merge: true))
+          .timeout(_serverTimeout);
+    } on TimeoutException {
+      // 확인 직후 연결이 끊긴 드문 경우. 쓰기는 대기열에 남아 있어 연결되면 적용될 수
+      // 있다(그러면 이 기기도 세션 무효화 감지로 로그아웃된다) — 여기서는 실패로 알린다.
+      throw const ServerUnreachableException();
+    }
     await _auth.signOut();
   }
 
+  static const Duration _serverTimeout = Duration(seconds: 10);
+
+  /// 서버에 실제로 닿는지 확인한다(승인 명단 문서를 캐시가 아닌 서버에서 한 번 읽음).
+  /// 되돌리기 어려운 여러 단계 작업(연동 해제 + 모든 기기 로그아웃)을 시작하기 전에,
+  /// 오프라인 상태에서 앞 단계만 성공하고 뒤 단계가 막히는 일을 줄이는 용도.
+  Future<void> ensureServerReachable() async {
+    final email = _auth.currentUser?.email;
+    if (email == null) return;
+    try {
+      await _firestore
+          .collection('admin_allowed_emails')
+          .doc(email.toLowerCase())
+          .get(const GetOptions(source: Source.server))
+          .timeout(_serverTimeout);
+    } on TimeoutException {
+      throw const ServerUnreachableException();
+    } on FirebaseException catch (error) {
+      if (error.code == 'unavailable') throw const ServerUnreachableException();
+      rethrow;
+    }
+  }
+
   /// [deleteIfUnapproved]가 true면 미승인일 때 로그아웃 대신 방금 막 로그인한 계정
-  /// 자체를 삭제한다(막 로그인한 직후라 재인증 없이 삭제 가능) — signInWithGoogle처럼
-  /// 계정이 그 순간 새로 생성될 수 있는 경로에서, 승인 안 된 채로 방치되는 빈 계정이
-  /// 남지 않게 하는 용도. completeSignInIfLink(이메일 링크)는 이 문제가 없으므로
+  /// 자체를 삭제한다(막 로그인한 직후라 재인증 없이 삭제 가능) — signInWithGoogle에서
+  /// 계정이 그 순간 새로 생성된 경우에만 true로 넘겨, 승인 안 된 채로 방치되는 빈 계정이
+  /// 남지 않게 하는 용도(기존 계정은 절대 지우지 않는다). completeSignInIfLink(이메일 링크)는 이 문제가 없으므로
   /// 기본값(false, 로그아웃만)을 그대로 쓴다.
   Future<void> _ensureApproved({bool deleteIfUnapproved = false}) async {
     final user = _auth.currentUser;

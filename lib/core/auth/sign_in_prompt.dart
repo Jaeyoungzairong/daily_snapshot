@@ -17,8 +17,13 @@ String describeAuthError(Object error) {
   if (error is PendingEmailNotFoundException) {
     return '로그인을 요청했던 기기(브라우저)에서 다시 열어주세요.';
   }
+  if (error is ServerUnreachableException) {
+    return '네트워크에 연결되어 있지 않습니다. 연결을 확인한 뒤 다시 시도해주세요.';
+  }
   if (error is FirebaseAuthException) {
     switch (error.code) {
+      case 'network-request-failed':
+        return '네트워크에 연결되어 있지 않습니다. 연결을 확인한 뒤 다시 시도해주세요.';
       case 'invalid-action-code':
         return '유효하지 않거나 이미 사용된 링크입니다. 입력한 이메일이 맞는지 확인하거나, 새 로그인 링크를 다시 요청해주세요.';
       case 'expired-action-code':
@@ -146,6 +151,8 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
       _confirming = true;
       _errorMessage = null;
     });
+    // 위젯이 사라진 뒤에도 해제할 수 있도록 notifier를 미리 잡아둔다(signInInProgressProvider 참고).
+    final inProgress = ref.read(signInInProgressProvider.notifier)..set(true);
     try {
       await ref
           .read(authServiceProvider)
@@ -165,6 +172,7 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
       });
       if (terminal) clearSignInLinkFromUrl();
     } finally {
+      inProgress.set(false);
       if (mounted) setState(() => _confirming = false);
     }
   }
@@ -197,6 +205,8 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
       _signingInWithGoogle = true;
       _errorMessage = null;
     });
+    // 위젯이 사라진 뒤에도 해제할 수 있도록 notifier를 미리 잡아둔다(signInInProgressProvider 참고).
+    final inProgress = ref.read(signInInProgressProvider.notifier)..set(true);
     try {
       await ref.read(authServiceProvider).signInWithGoogle();
     } on GoogleSignInException catch (error) {
@@ -209,6 +219,7 @@ class _SignInPromptState extends ConsumerState<SignInPrompt> {
       if (!mounted) return;
       setState(() => _errorMessage = describeAuthError(error));
     } finally {
+      inProgress.set(false);
       if (mounted) setState(() => _signingInWithGoogle = false);
     }
   }

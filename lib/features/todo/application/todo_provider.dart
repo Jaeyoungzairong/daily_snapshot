@@ -70,7 +70,10 @@ mixin _OptimisticList<T> on StreamNotifier<List<T>> {
 }
 
 class TodoListNotifier extends StreamNotifier<List<TodoItem>> with _OptimisticList<TodoItem> {
-  late final TodoRepository _repository;
+  // final로 두면 안 된다 — Riverpod은 provider가 다시 빌드될 때(다시 시도의 invalidate, 로그아웃
+  // 후 재로그인, 스트림 에러 뒤 자동 재시도) Notifier 인스턴스를 새로 만들지 않고 build()만 다시
+  // 부른다. late final이면 두 번째 대입에서 LateInitializationError가 나 카드가 영구히 고장났다.
+  late TodoRepository _repository;
 
   // 타임스탬프만으로는 같은 마이크로초에 연달아 추가될 경우 id가 겹칠 수 있어
   // (예: 테스트에서 add()를 연속 호출) 인스턴스 수명 동안 증가만 하는 카운터를 더한다.
@@ -166,7 +169,8 @@ final memoUnsavedEditsProvider = NotifierProvider<MemoUnsavedEditsNotifier, bool
 );
 
 class TodoMemoNotifier extends StreamNotifier<List<MemoItem>> with _OptimisticList<MemoItem> {
-  late final TodoRepository _repository;
+  // TodoListNotifier와 같은 이유로 final이 아니다(build()가 같은 인스턴스에서 다시 불림).
+  late TodoRepository _repository;
 
   // TodoListNotifier와 같은 이유로 타임스탬프에 인스턴스 카운터를 더해 id 충돌을 막는다.
   int _idSequence = 0;
@@ -314,6 +318,14 @@ class TodoMemoNotifier extends StreamNotifier<List<MemoItem>> with _OptimisticLi
   /// 저장에 실패해 아직 서버에 반영되지 않은 편집이 남아 있는지. [flushPending] 직후에
   /// 확인하면 "지금 로그아웃하면 잃는 내용이 있는지"를 알 수 있다.
   bool get hasUnsavedEdits => _titleSaveFailed || _contentSaveFailed;
+
+  /// [id] 메모의 제목/내용에 아직 서버에 반영되지 않은 편집(디바운스 대기 중이거나 저장에
+  /// 실패해 남아 있는 값)이 있는지. MemoCard가 다른 기기의 변경을 편집창에 반영해도 되는지
+  /// 판단할 때 쓴다 — 대기 값이 있는데 편집창만 서버 값으로 바꾸면, 곧 대기 값이 저장되면서
+  /// 방금 반영한 원격 변경을 다시 덮어쓴다.
+  bool hasPendingTitleFor(String id) => _pendingTitleId == id && _pendingTitleValue != null;
+
+  bool hasPendingContentFor(String id) => _pendingContentId == id && _pendingContentValue != null;
 
   void _publishSaveFailure() {
     final failed = hasUnsavedEdits;

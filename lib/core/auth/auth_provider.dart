@@ -75,6 +75,25 @@ class SessionInvalidationHandledNotifier extends Notifier<bool> {
   void set(bool value) => state = value;
 }
 
+/// 로그인 절차(Google 로그인, 이메일 링크 완료)가 아직 끝나지 않았는지.
+///
+/// 이 절차들은 Firebase 로그인이 먼저 끝난 뒤 승인 명단을 확인하고, 미승인이면 곧바로 로그아웃
+/// (새 Google 계정이면 삭제)한다 — 그 사이 uid가 잠깐 생기는데, 예전엔 계정 다이얼로그가 이를
+/// "로그인 완료"로 보고 바로 닫혀서 뒤이은 "관리자 승인이 필요합니다" 안내가 사라진 다이얼로그에
+/// 버려졌다(안드로이드에서 미승인 계정으로 로그인하면 아무 설명 없이 창만 닫힘). 또 대시보드가
+/// 그 잠깐 사이의 권한 거부를 "세션 만료"로 오인해 먼저 로그아웃시키면, 새 계정 삭제가 실패해
+/// 빈 계정이 남을 수 있었다. 절차가 끝날 때까지 두 곳 모두 이 값을 보고 기다린다.
+class SignInInProgressNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+final signInInProgressProvider = NotifierProvider<SignInInProgressNotifier, bool>(
+  SignInInProgressNotifier.new,
+);
+
 final sessionInvalidationHandledProvider =
     NotifierProvider<SessionInvalidationHandledNotifier, bool>(
       SessionInvalidationHandledNotifier.new,

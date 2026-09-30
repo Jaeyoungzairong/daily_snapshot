@@ -41,6 +41,8 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
-  <script src="flutter_bootstrap.js" async></script>
+  <!-- ?v=2: 예전 1년 immutable 캐시에 남은 옛 부트스트랩을 우회하기 위한 1회성 버전 쿼리
+       (web/flutter_bootstrap.js의 cacheBustVersion과 같은 값, 배포마다 올릴 필요 없음). -->
+  <script src="flutter_bootstrap.js?v=2" async></script>
 </body>
 </html>
