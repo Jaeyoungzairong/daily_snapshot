@@ -37,9 +37,20 @@ class RateHistoryChart extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 20),
+        // 갱신에 실패해 이전 그래프를 그대로 보여주는 중이면 알린다(아래 when의 skipError).
+        if (historyAsync.hasError && historyAsync.hasValue) ...[
+          Text(
+            '그래프 갱신에 실패해 이전 데이터를 표시 중입니다.',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+          ),
+          const SizedBox(height: 8),
+        ],
         SizedBox(
           height: 300,
           child: historyAsync.when(
+            // 갱신 중이거나 갱신에 실패해도 이미 받아 둔 값이 있으면 그래프를 그대로 둔다.
+            skipLoadingOnReload: true,
+            skipError: true,
             loading: () => const LoadingView(),
             error: (error, _) => ErrorView(
               message: error.toString(),

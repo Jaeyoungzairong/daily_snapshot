@@ -45,6 +45,13 @@ class Formatters {
 
   static String hour24(DateTime dateTime) => '${dateTime.hour}시';
 
+  /// 예: "09:05" — 데이터를 마지막으로 조회한 시각 표시용.
+  static String time(DateTime dateTime) {
+    final h = dateTime.hour.toString().padLeft(2, '0');
+    final min = dateTime.minute.toString().padLeft(2, '0');
+    return '$h:$min';
+  }
+
   /// 예: "25.9.2 14:30" — 연도가 몇 년이든 항상 연도(YY)를 포함한다.
   static String dateTime(DateTime dateTime) {
     final h = dateTime.hour.toString().padLeft(2, '0');

@@ -19,23 +19,54 @@ class WeatherCard extends ConsumerStatefulWidget {
   ConsumerState<WeatherCard> createState() => _WeatherCardState();
 }
 
-class _WeatherCardState extends ConsumerState<WeatherCard> {
+class _WeatherCardState extends ConsumerState<WeatherCard> with WidgetsBindingObserver {
   late final TextEditingController _controller;
   Timer? _debounce;
+  Timer? _refreshTimer;
   String _query = '';
   bool _locating = false;
+
+  // 날씨(FutureProvider)는 한 번 조회하면 계속 캐시돼서, 아침에 열어 둔 탭은 종일 그때 기온과
+  // 시간별 예보("지금" 표시, 지난 시간대)를 보여줬다. 시간별 예보의 "지금"/지난 시간 판단도
+  // 조회 시점의 시각으로 한 번만 계산되므로 다시 조회해야만 갱신된다. 기상청 초단기실황은
+  // 매시 40분경, 단기예보는 3시간마다 나와서 15분처럼 자주 불러도 대부분 같은 값이다 — 30분이면
+  // 새 값이 나온 뒤 늦어도 30분 안에 화면에 반영된다.
+  //
+  // 탭/앱으로 돌아왔을 때도 같은 기준을 쓴다: 마지막 조회가 이 주기보다 오래됐을 때만 갱신한다
+  // (웹은 다른 창을 눌렀다 돌아오는 것만으로도 "복귀"라, 기준이 짧으면 창을 오갈 때마다 기상청
+  // API를 부르게 된다). 조회에 실패해 값이 없거나 옛 값이면 자연히 이 기준을 넘어 바로 재시도한다.
+  static const Duration _refreshInterval = Duration(minutes: 30);
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: ref.read(selectedCityProvider).name);
+    WidgetsBinding.instance.addObserver(this);
+    _refreshTimer = Timer.periodic(_refreshInterval, (_) => _refreshWeather());
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _debounce?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final current = ref.read(weatherProvider(ref.read(selectedCityProvider)));
+    if (current.isLoading) return;
+    final fetchedAt = current.value?.fetchedAt;
+    if (fetchedAt != null && DateTime.now().difference(fetchedAt) < _refreshInterval) return;
+    _refreshWeather();
+  }
+
+  // 화면에는 이전 값을 그대로 두고(build의 skipLoadingOnReload/skipError) 뒤에서 다시 받는다.
+  void _refreshWeather() {
+    ref.invalidate(weatherProvider(ref.read(selectedCityProvider)));
   }
 
   // 기상청 지역 목록은 앱에 내장된 자산이라 매 키 입력마다 검색해도 부담이 없지만,
@@ -121,6 +152,11 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
           ],
           const SizedBox(height: 16),
           weatherAsync.when(
+            // 자동 갱신 중이거나 갱신에 실패해도 이미 받아 둔 값이 있으면 그대로 보여준다 —
+            // 스피너로 바뀌거나 멀쩡한 날씨 화면이 에러 화면으로 바뀌는 것을 막는다(처음 조회하는
+            // 도시는 이전 값이 없으므로 그대로 로딩/에러 화면).
+            skipLoadingOnReload: true,
+            skipError: true,
             loading: () => const LoadingView(),
             error: (error, _) => ErrorView(
               message: error.toString(),
@@ -129,7 +165,20 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
             data: (weather) => Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(weather.cityName, style: Theme.of(context).textTheme.titleLarge),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Expanded(
+                      child: Text(weather.cityName, style: Theme.of(context).textTheme.titleLarge),
+                    ),
+                    const SizedBox(width: 8),
+                    _FetchedAtLabel(
+                      fetchedAt: weather.fetchedAt,
+                      refreshFailed: weatherAsync.hasError,
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -172,6 +221,27 @@ class _WeatherCardState extends ConsumerState<WeatherCard> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 이 화면의 날씨를 서버에서 받아온 시각. 자동 갱신이 실패해 옛 값을 보여주는 중이면 그 사실도
+/// 함께 알린다.
+class _FetchedAtLabel extends StatelessWidget {
+  const _FetchedAtLabel({required this.fetchedAt, required this.refreshFailed});
+
+  final DateTime fetchedAt;
+  final bool refreshFailed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final time = Formatters.time(fetchedAt);
+    return Text(
+      refreshFailed ? '갱신 실패 · $time 기준' : '$time 기준',
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: refreshFailed ? theme.colorScheme.error : theme.colorScheme.outline,
       ),
     );
   }
