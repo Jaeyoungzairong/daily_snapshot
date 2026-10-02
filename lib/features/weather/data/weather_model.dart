@@ -11,11 +11,16 @@ class WeatherModel {
     required this.dailyForecast,
     required this.hourlyForecast,
     required this.precipitationAmount,
+    required this.fetchedAt,
   });
 
   /// Open-Meteo forecast API 응답 파싱. 현재는 사용하지 않는 OpenMeteoWeatherRepository
   /// (기상청으로 교체됨, 추후 재사용 대비 보존) 전용이다.
-  factory WeatherModel.fromJson({required String cityName, required Map<String, dynamic> json}) {
+  factory WeatherModel.fromJson({
+    required String cityName,
+    required Map<String, dynamic> json,
+    DateTime? fetchedAt,
+  }) {
     final current = json['current'] as Map<String, dynamic>;
     final daily = json['daily'] as Map<String, dynamic>;
     final hourly = json['hourly'] as Map<String, dynamic>;
@@ -77,6 +82,7 @@ class WeatherModel {
       dailyForecast: dailyForecast,
       hourlyForecast: hourlyForecast,
       precipitationAmount: _formatMillimeters(current['precipitation'] as num),
+      fetchedAt: fetchedAt ?? DateTime.now(),
     );
   }
 
@@ -100,6 +106,10 @@ class WeatherModel {
 
   /// 현재 강수량 표시용 문자열(예: "1.0mm", 기상청은 범주 텍스트 그대로). 강수가 없으면 null.
   final String? precipitationAmount;
+
+  /// 이 데이터를 서버에서 받아온 시각. 카드가 "HH:mm 기준"으로 보여줘서, 오래 켜둔 탭이
+  /// 자동 갱신에 실패했을 때도 지금 화면이 얼마나 오래된 값인지 알 수 있게 한다.
+  final DateTime fetchedAt;
 
   String get description => condition.description;
   IconData get icon => condition.icon;

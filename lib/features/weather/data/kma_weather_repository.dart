@@ -257,6 +257,7 @@ WeatherModel buildWeatherModel({
     hourlyForecast: hourlyForecast,
     // 초단기실황의 실측 강수량(RN1). 단기예보(PCP)와 달리 "지금" 시점의 실제값이다.
     precipitationAmount: _currentPrecipitationText(currentByCategory['RN1']),
+    fetchedAt: now,
   );
 }
 

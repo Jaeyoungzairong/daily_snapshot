@@ -36,6 +36,7 @@ class _FakeWeatherRepository extends WeatherRepository {
         ),
       ],
       precipitationAmount: null,
+      fetchedAt: DateTime(2026, 8, 27, 14),
     );
   }
 
